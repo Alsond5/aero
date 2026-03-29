@@ -1,5 +1,7 @@
 package aero
 
+import "strings"
+
 const (
 	mGET     = 0
 	mPOST    = 1
@@ -32,7 +34,48 @@ func methodIndex(m string) int {
 	return -1
 }
 
-type staticTable [mCount]map[string]*Route
+func methodString(mi int) string {
+	switch mi {
+	case mGET:
+		return "GET"
+	case mPOST:
+		return "POST"
+	case mPUT:
+		return "PUT"
+	case mPATCH:
+		return "PATCH"
+	case mDELETE:
+		return "DELETE"
+	case mHEAD:
+		return "HEAD"
+	case mOPTIONS:
+		return "OPTIONS"
+	}
+
+	return ""
+}
+
+type methodBit uint16
+
+const (
+	methodBitGET     methodBit = 1 << 0
+	methodBitPOST    methodBit = 1 << 1
+	methodBitPUT     methodBit = 1 << 2
+	methodBitPATCH   methodBit = 1 << 3
+	methodBitDELETE  methodBit = 1 << 4
+	methodBitHEAD    methodBit = 1 << 5
+	methodBitOPTIONS methodBit = 1 << 6
+)
+
+var methodBits = [mCount]methodBit{
+	mGET:     methodBitGET,
+	mPOST:    methodBitPOST,
+	mPUT:     methodBitPUT,
+	mPATCH:   methodBitPATCH,
+	mDELETE:  methodBitDELETE,
+	mHEAD:    methodBitHEAD,
+	mOPTIONS: methodBitOPTIONS,
+}
 
 type ParamValues []Param
 
@@ -41,29 +84,74 @@ type Param struct {
 	Value string
 }
 
-type Route struct {
-	method     string
-	path       string
-	params     []string
-	handlers   []HandlerFunc
-	mc         int
-	total      int
+type staticTable map[string]*endpoint
+
+type route struct {
+	method   string
+	path     string
+	handlers []HandlerFunc
+	params   []string
+
+	middlewareCount int
+	total           int
+
 	isStatic   bool
 	isWildcard bool
 	isRoot     bool
 }
 
-type Router struct {
-	static  staticTable
-	dynamic [mCount]*SegmentTrie
+type endpoint struct {
+	routes  [mCount]*route
+	allowed methodBit
 }
 
-func newRouter() *Router {
-	r := &Router{}
+func newEndpoint() *endpoint {
+	return &endpoint{}
+}
 
-	for i := range mCount {
-		r.static[i] = make(map[string]*Route, 4)
-		r.dynamic[i] = newARTTree()
+func (e *endpoint) setRoute(mi int, route *route) {
+	e.routes[mi] = route
+	e.allowed |= methodBits[mi]
+}
+
+func (e *endpoint) getRoute(mi int) *route {
+	return e.routes[mi]
+}
+
+func (e *endpoint) isAllowed(mi int) bool {
+	return e.allowed&methodBits[mi] != 0
+}
+
+func (e *endpoint) allowedMethods() string {
+	var b strings.Builder
+
+	first := true
+	for mi := range mCount {
+		if !e.isAllowed(mi) {
+			continue
+		}
+
+		if !first {
+			b.WriteString(", ")
+
+		}
+
+		b.WriteString(methodString(mi))
+		first = false
+	}
+
+	return b.String()
+}
+
+type Router struct {
+	tree   *segmentTrie
+	static staticTable
+}
+
+func NewRouter() *Router {
+	r := &Router{
+		tree:   newSegmentTrie(),
+		static: make(staticTable, 10),
 	}
 
 	return r
@@ -75,37 +163,43 @@ func (r *Router) register(method, path string, handlers []HandlerFunc, middlewar
 		panic("unsupported HTTP method: " + method)
 	}
 
-	isDynamic, paramNames := parsePath(path)
+	dynamic, labels := parsePath(path)
 
-	route := &Route{
-		method:   method,
-		path:     path,
-		handlers: handlers,
-		mc:       middlewareCount,
-		total:    middlewareCount + len(handlers),
-		params:   paramNames,
-		isStatic: !isDynamic,
-		isRoot:   path == "/",
+	route := &route{
+		method:          method,
+		path:            path,
+		handlers:        handlers,
+		params:          labels,
+		isStatic:        !dynamic,
+		isRoot:          path == "/",
+		middlewareCount: middlewareCount,
+		total:           middlewareCount + len(handlers),
 	}
 
-	if isDynamic {
-		r.dynamic[mi].Insert(path, route)
+	if dynamic {
+		r.tree.Insert(path, mi, route)
 	} else {
-		r.static[mi][path] = route
+		ep, ok := r.static[path]
+		if !ok {
+			ep = newEndpoint()
+			r.static[path] = ep
+		}
+
+		ep.setRoute(mi, route)
 	}
 }
 
-func (r *Router) match(method, path string, params *ParamValues, paramsCount *int) *Route {
+func (r *Router) match(method, path string, params *ParamValues, paramsCount *int) *endpoint {
 	mi := methodIndex(method)
 	if mi == -1 {
 		return nil
 	}
 
-	if route, ok := r.static[mi][path]; ok {
-		return route
+	if ep, ok := r.static[path]; ok {
+		return ep
 	}
 
-	return r.dynamic[mi].Search(path, params, paramsCount)
+	return r.tree.Search(path, params, paramsCount)
 }
 
 func parsePath(path string) (bool, []string) {

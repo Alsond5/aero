@@ -36,12 +36,17 @@ func defaultConfig() Config {
 
 type App struct {
 	config      Config
-	router      Router
 	pool        sync.Pool
 	middlewares []HandlerFunc
 	onShutdown  []func()
 	routeCount  atomic.Uint32
 	mu          sync.RWMutex
+
+	router *Router
+
+	NotFoundHandler         NotFoundHandler
+	MethodNotAllowedHandler MethodNotAllowedHandler
+	ErrorHandler            ErrorHandler
 }
 
 func New(config ...Config) *App {
@@ -52,7 +57,7 @@ func New(config ...Config) *App {
 
 	app := &App{
 		config: cfg,
-		router: *newRouter(),
+		router: NewRouter(),
 	}
 
 	app.pool = sync.Pool{
@@ -66,6 +71,10 @@ func New(config ...Config) *App {
 			return c
 		},
 	}
+
+	app.NotFoundHandler = defaultNotFoundHandler
+	app.MethodNotAllowedHandler = defaultMethodNotAllowedHandler
+	app.ErrorHandler = defaultErrorHandler
 
 	return app
 }
@@ -115,32 +124,31 @@ func (a *App) add(method, path string, handlers []HandlerFunc) {
 
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := a.pool.Get().(*Ctx)
-	ctx.reset()
+	defer a.pool.Put(ctx)
 
-	ctx.app = a
-	ctx.r = r
-	ctx.w = w
+	ctx.reset(w, r)
 
-	// ctx.basePath = ""
+	ep := a.router.match(r.Method, r.URL.Path, &ctx.params, &ctx.paramsCount)
+	if ep == nil {
+		a.NotFoundHandler(ctx)
+		return
+	}
 
-	route := a.router.match(r.Method, r.URL.Path, &ctx.params, &ctx.paramsCount)
+	route := ep.getRoute(methodIndex(r.Method))
+
 	if route == nil {
-		http.NotFound(w, r)
-		a.pool.Put(ctx)
-
+		a.MethodNotAllowedHandler(ep.allowedMethods(), ctx)
 		return
 	}
 
 	ctx.route = route
-	if route.mc > 0 {
+	if route.middlewareCount > 0 {
 		ctx.middlewares = a.middlewares
 	}
 
 	if err := ctx.Next(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		a.ErrorHandler(ctx, err)
 	}
-
-	a.pool.Put(ctx)
 }
 
 func (a *App) Listen(addr string) error {

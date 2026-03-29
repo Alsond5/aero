@@ -10,45 +10,47 @@ const (
 	nodeKindWildcard
 )
 
-type TrieNode struct {
-	kind      nodeKind
-	label     string
-	paramName string
+type children map[string]*trieNode
 
-	staticChildren map[string]*TrieNode
-	paramChild     *TrieNode
-	wildcardChild  *TrieNode
-
-	route *Route
+type trieNode struct {
+	endpoint       *endpoint
+	staticChildren children
+	kind           nodeKind
+	label          string
+	paramChild     *trieNode
+	wildcardChild  *trieNode
 }
 
-func newTrieNode(kind nodeKind, label string) *TrieNode {
-	n := &TrieNode{
+func newTrieNode(kind nodeKind, label string) *trieNode {
+	n := &trieNode{
 		kind:  kind,
 		label: label,
 	}
 	if kind == nodeKindStatic {
-		n.staticChildren = make(map[string]*TrieNode, 2)
+		n.staticChildren = make(map[string]*trieNode, 2)
 	}
 
 	return n
 }
 
-type SegmentTrie struct {
-	root *TrieNode
+type segmentTrie struct {
+	root *trieNode
 }
 
-func newARTTree() *SegmentTrie {
-	return &SegmentTrie{
+func newSegmentTrie() *segmentTrie {
+	return &segmentTrie{
 		root: newTrieNode(nodeKindStatic, ""),
 	}
 }
 
-func (t *SegmentTrie) Insert(path string, route *Route) {
+func (t *segmentTrie) Insert(path string, mi int, route *route) {
 	node := t.root
 
 	if path == "/" {
-		node.route = route
+		if node.endpoint == nil {
+			node.endpoint = newEndpoint()
+		}
+		node.endpoint.setRoute(mi, route)
 		return
 	}
 
@@ -81,8 +83,7 @@ func (t *SegmentTrie) Insert(path string, route *Route) {
 
 		case seg[0] == ':':
 			if node.paramChild == nil {
-				node.paramChild = newTrieNode(nodeKindParam, "")
-				node.paramChild.paramName = seg[1:]
+				node.paramChild = newTrieNode(nodeKindParam, seg[1:])
 			}
 			node = node.paramChild
 
@@ -96,14 +97,17 @@ func (t *SegmentTrie) Insert(path string, route *Route) {
 		}
 	}
 
-	node.route = route
+	if node.endpoint == nil {
+		node.endpoint = newEndpoint()
+	}
+	node.endpoint.setRoute(mi, route)
 }
 
-func (t *SegmentTrie) Search(path string, params *ParamValues, paramsCount *int) *Route {
+func (t *segmentTrie) Search(path string, params *ParamValues, paramsCount *int) *endpoint {
 	node := t.root
 
 	if path == "/" {
-		return node.route
+		return node.endpoint
 	}
 
 	start := 0
@@ -134,7 +138,7 @@ func (t *SegmentTrie) Search(path string, params *ParamValues, paramsCount *int)
 
 		if node.paramChild != nil {
 			*params = append(*params, Param{
-				Key:   node.paramChild.paramName,
+				Key:   node.paramChild.label,
 				Value: seg,
 			})
 
@@ -152,5 +156,5 @@ func (t *SegmentTrie) Search(path string, params *ParamValues, paramsCount *int)
 		return nil
 	}
 
-	return node.route
+	return node.endpoint
 }

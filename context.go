@@ -10,7 +10,7 @@ type Ctx struct {
 	Res
 
 	app         *App
-	route       *Route
+	route       *route
 	r           *http.Request
 	w           http.ResponseWriter
 	middlewares []HandlerFunc
@@ -35,21 +35,20 @@ func (c *Ctx) Next() error {
 	}
 
 	var h HandlerFunc
-	if c.index < c.route.mc {
+	if c.index < c.route.middlewareCount {
 		h = c.middlewares[c.index]
 	} else {
-		h = c.route.handlers[c.index-c.route.mc]
+		h = c.route.handlers[c.index-c.route.middlewareCount]
 	}
 
 	c.index++
 	return h(c)
 }
 
-func (c *Ctx) reset() {
-	c.app = nil
+func (c *Ctx) reset(w http.ResponseWriter, r *http.Request) {
 	c.route = nil
-	c.r = nil
-	c.w = nil
+	c.w = w
+	c.r = r
 
 	c.middlewares = c.middlewares[:0]
 	c.index = 0
