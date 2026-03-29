@@ -58,23 +58,21 @@ func methodString(mi int) string {
 type methodBit uint16
 
 const (
-	methodBitGET     methodBit = 1 << 0
-	methodBitPOST    methodBit = 1 << 1
-	methodBitPUT     methodBit = 1 << 2
-	methodBitPATCH   methodBit = 1 << 3
-	methodBitDELETE  methodBit = 1 << 4
-	methodBitHEAD    methodBit = 1 << 5
-	methodBitOPTIONS methodBit = 1 << 6
+	methodBitGET    methodBit = 1 << 0
+	methodBitPOST   methodBit = 1 << 1
+	methodBitPUT    methodBit = 1 << 2
+	methodBitPATCH  methodBit = 1 << 3
+	methodBitDELETE methodBit = 1 << 4
+	methodBitHEAD   methodBit = 1 << 5
 )
 
 var methodBits = [mCount]methodBit{
-	mGET:     methodBitGET,
-	mPOST:    methodBitPOST,
-	mPUT:     methodBitPUT,
-	mPATCH:   methodBitPATCH,
-	mDELETE:  methodBitDELETE,
-	mHEAD:    methodBitHEAD,
-	mOPTIONS: methodBitOPTIONS,
+	mGET:    methodBitGET,
+	mPOST:   methodBitPOST,
+	mPUT:    methodBitPUT,
+	mPATCH:  methodBitPATCH,
+	mDELETE: methodBitDELETE,
+	mHEAD:   methodBitHEAD,
 }
 
 type ParamValues []Param
@@ -111,7 +109,11 @@ func newEndpoint() *endpoint {
 
 func (e *endpoint) setRoute(mi int, route *route) {
 	e.routes[mi] = route
+
 	e.allowed |= methodBits[mi]
+	if mi == mGET {
+		e.allowed |= methodBitHEAD
+	}
 }
 
 func (e *endpoint) getRoute(mi int) *route {
@@ -189,12 +191,7 @@ func (r *Router) register(method, path string, handlers []HandlerFunc, middlewar
 	}
 }
 
-func (r *Router) match(method, path string, params *ParamValues, paramsCount *int) *endpoint {
-	mi := methodIndex(method)
-	if mi == -1 {
-		return nil
-	}
-
+func (r *Router) match(path string, params *ParamValues, paramsCount *int) *endpoint {
 	if ep, ok := r.static[path]; ok {
 		return ep
 	}

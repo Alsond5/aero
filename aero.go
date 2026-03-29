@@ -47,6 +47,7 @@ type App struct {
 	NotFoundHandler         NotFoundHandler
 	MethodNotAllowedHandler MethodNotAllowedHandler
 	ErrorHandler            ErrorHandler
+	OptionsHandler          OptionsHandler
 }
 
 func New(config ...Config) *App {
@@ -76,6 +77,7 @@ func New(config ...Config) *App {
 	app.NotFoundHandler = defaultNotFoundHandler
 	app.MethodNotAllowedHandler = defaultMethodNotAllowedHandler
 	app.ErrorHandler = defaultErrorHandler
+	app.OptionsHandler = defaultOptionsHandler
 
 	return app
 }
@@ -129,7 +131,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	ctx.reset(w, r)
 
-	ep := a.router.match(r.Method, r.URL.Path, &ctx.params, &ctx.paramsCount)
+	ep := a.router.match(r.URL.Path, &ctx.params, &ctx.paramsCount)
 	if ep == nil {
 		a.NotFoundHandler(ctx)
 		return
@@ -137,9 +139,24 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	route := ep.getRoute(methodIndex(r.Method))
 
-	if route == nil {
-		a.MethodNotAllowedHandler(ep.allowedMethods(), ctx)
-		return
+	switch r.Method {
+	case http.MethodHead:
+		if route == nil && !ep.isAllowed(mGET) {
+			a.MethodNotAllowedHandler(ep.allowedMethods(), ctx)
+			return
+		}
+		if route == nil {
+			route = ep.getRoute(mGET)
+		}
+	case http.MethodOptions:
+		if route == nil {
+			a.OptionsHandler(ep.allowedMethods(), ctx)
+			return
+		}
+	default:
+		if route == nil {
+			a.MethodNotAllowedHandler(ep.allowedMethods(), ctx)
+		}
 	}
 
 	ctx.route = route

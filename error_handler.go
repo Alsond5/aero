@@ -3,9 +3,7 @@ package aero
 import "net/http"
 
 type ErrorHandler func(c *Ctx, err error)
-
 type NotFoundHandler func(c *Ctx)
-
 type MethodNotAllowedHandler func(allowed string, c *Ctx)
 
 func defaultErrorHandler(c *Ctx, err error) {
