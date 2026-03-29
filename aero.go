@@ -63,6 +63,7 @@ func New(config ...Config) *App {
 	app.pool = sync.Pool{
 		New: func() any {
 			c := &Ctx{
+				app:    app,
 				status: 200,
 			}
 			c.Req.c = c
