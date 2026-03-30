@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -124,12 +123,10 @@ func (res *Res) SendStatus(code int) error {
 		return nil
 	}
 
-	body := http.StatusText(res.c.status)
-	if body == "" {
-		body = strconv.Itoa(res.c.status)
-	}
+	res.c.Status(code)
+	res.c.w.WriteHeader(res.c.status)
 
-	return res.c.Status(code).SendString(body)
+	return nil
 }
 
 func (res *Res) SetHeader(key, value string) *Res {

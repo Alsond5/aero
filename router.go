@@ -109,8 +109,8 @@ func newEndpoint() *endpoint {
 
 func (e *endpoint) setRoute(mi int, route *route) {
 	e.routes[mi] = route
-
 	e.allowed |= methodBits[mi]
+
 	if mi == mGET {
 		e.allowed |= methodBitHEAD
 	}

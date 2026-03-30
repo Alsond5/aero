@@ -15,6 +15,7 @@ type Ctx struct {
 	w           http.ResponseWriter
 	middlewares []HandlerFunc
 	index       int
+	hIndex      int
 
 	basePath    string
 	path        string
@@ -37,11 +38,12 @@ func (c *Ctx) Next() error {
 	var h HandlerFunc
 	if c.index < c.route.middlewareCount {
 		h = c.middlewares[c.index]
+		c.index++
 	} else {
-		h = c.route.handlers[c.index-c.route.middlewareCount]
+		h = c.route.handlers[c.hIndex]
+		c.hIndex++
 	}
 
-	c.index++
 	return h(c)
 }
 
@@ -52,6 +54,7 @@ func (c *Ctx) reset(w http.ResponseWriter, r *http.Request) {
 
 	c.middlewares = c.middlewares[:0]
 	c.index = 0
+	c.hIndex = 0
 
 	c.basePath = ""
 	c.path = ""

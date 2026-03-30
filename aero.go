@@ -138,25 +138,17 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	route := ep.getRoute(methodIndex(r.Method))
-
-	switch r.Method {
-	case http.MethodHead:
-		if route == nil && !ep.isAllowed(mGET) {
-			a.MethodNotAllowedHandler(ep.allowedMethods(), ctx)
-			return
-		}
-		if route == nil {
-			route = ep.getRoute(mGET)
-		}
-	case http.MethodOptions:
-		if route == nil {
+	if route == nil && r.Method == http.MethodHead && ep.isAllowed(mGET) {
+		route = ep.getRoute(mGET)
+	}
+	if route == nil {
+		if r.Method == http.MethodOptions {
 			a.OptionsHandler(ep.allowedMethods(), ctx)
 			return
 		}
-	default:
-		if route == nil {
-			a.MethodNotAllowedHandler(ep.allowedMethods(), ctx)
-		}
+
+		a.MethodNotAllowedHandler(ep.allowedMethods(), ctx)
+		return
 	}
 
 	ctx.route = route
