@@ -41,8 +41,7 @@ type App struct {
 	onShutdown  []func()
 	routeCount  atomic.Uint32
 	mu          sync.RWMutex
-
-	router *Router
+	router      *Router
 
 	NotFoundHandler         NotFoundHandler
 	MethodNotAllowedHandler MethodNotAllowedHandler
@@ -83,31 +82,31 @@ func New(config ...Config) *App {
 }
 
 func (a *App) GET(path string, handlers ...HandlerFunc) {
-	a.add("GET", path, handlers)
+	a.add(http.MethodGet, path, handlers)
 }
 
 func (a *App) POST(path string, handlers ...HandlerFunc) {
-	a.add("POST", path, handlers)
+	a.add(http.MethodPost, path, handlers)
 }
 
 func (a *App) PUT(path string, handlers ...HandlerFunc) {
-	a.add("PUT", path, handlers)
+	a.add(http.MethodPut, path, handlers)
 }
 
 func (a *App) PATCH(path string, handlers ...HandlerFunc) {
-	a.add("PATCH", path, handlers)
+	a.add(http.MethodPatch, path, handlers)
 }
 
 func (a *App) DELETE(path string, handlers ...HandlerFunc) {
-	a.add("DELETE", path, handlers)
+	a.add(http.MethodDelete, path, handlers)
 }
 
 func (a *App) HEAD(path string, handlers ...HandlerFunc) {
-	a.add("HEAD", path, handlers)
+	a.add(http.MethodHead, path, handlers)
 }
 
 func (a *App) OPTIONS(path string, handlers ...HandlerFunc) {
-	a.add("OPTIONS", path, handlers)
+	a.add(http.MethodOptions, path, handlers)
 }
 
 func (a *App) Use(handlers ...HandlerFunc) {
@@ -115,6 +114,16 @@ func (a *App) Use(handlers ...HandlerFunc) {
 	defer a.mu.Unlock()
 
 	a.middlewares = append(a.middlewares, handlers...)
+}
+
+func (a *App) Group(prefix string, m ...HandlerFunc) (g *Group) {
+	g = &Group{
+		prefix:      prefix,
+		app:         a,
+		middlewares: make([]HandlerFunc, 0, len(m)),
+	}
+	g.Use(m...)
+	return
 }
 
 func (a *App) add(method, path string, handlers []HandlerFunc) {
@@ -152,9 +161,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx.route = route
-	if route.middlewareCount > 0 {
-		ctx.middlewares = a.middlewares
-	}
+	ctx.middlewares = a.middlewares[:route.middlewareCount]
 
 	if err := ctx.Next(); err != nil {
 		a.ErrorHandler(ctx, err)
