@@ -226,7 +226,7 @@ func (req *Req) Param(key string) string {
 }
 
 func (req *Req) Params() []Param {
-	return req.c.params
+	return req.c.params[:req.c.paramsCount]
 }
 
 func (req *Req) Range(size int64, combine ...bool) (*RangeResult, error) {

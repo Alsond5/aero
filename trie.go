@@ -137,11 +137,10 @@ func (t *segmentTrie) Search(path string, params *ParamValues, paramsCount *int)
 		}
 
 		if node.paramChild != nil {
-			*params = append(*params, Param{
+			params[*paramsCount] = Param{
 				Key:   node.paramChild.label,
 				Value: seg,
-			})
-
+			}
 			*paramsCount++
 
 			node = node.paramChild

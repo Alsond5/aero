@@ -58,7 +58,7 @@ func (c *Ctx) reset(w http.ResponseWriter, r *http.Request) {
 
 	c.basePath = ""
 	c.path = ""
-	c.params = c.params[:0]
+	c.paramsCount = 0
 	c.query = nil
 	c.status = 200
 	c.size = 0

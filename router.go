@@ -1,6 +1,13 @@
 package aero
 
-import "strings"
+import (
+	"strings"
+)
+
+const (
+	maxParamCount    = 8
+	maxParamCountStr = "8"
+)
 
 const (
 	mGET     = 0
@@ -75,7 +82,7 @@ var methodBits = [mCount]methodBit{
 	mHEAD:   methodBitHEAD,
 }
 
-type ParamValues []Param
+type ParamValues [maxParamCount]Param
 
 type Param struct {
 	Key   string
@@ -88,14 +95,9 @@ type route struct {
 	method   string
 	path     string
 	handlers []HandlerFunc
-	params   []string
 
 	middlewareCount int
 	total           int
-
-	isStatic   bool
-	isWildcard bool
-	isRoot     bool
 }
 
 type endpoint struct {
@@ -165,17 +167,17 @@ func (r *Router) register(method, path string, handlers []HandlerFunc, middlewar
 		panic("unsupported HTTP method: " + method)
 	}
 
-	dynamic, labels := parsePath(path)
-
 	route := &route{
 		method:          method,
 		path:            path,
 		handlers:        handlers,
-		params:          labels,
-		isStatic:        !dynamic,
-		isRoot:          path == "/",
 		middlewareCount: middlewareCount,
 		total:           middlewareCount + len(handlers),
+	}
+
+	dynamic, paramCount := analyzePath(path)
+	if paramCount > maxParamCount {
+		panic("too many params in route: max is " + maxParamCountStr)
 	}
 
 	if dynamic {
@@ -199,28 +201,16 @@ func (r *Router) match(path string, params *ParamValues, paramsCount *int) *endp
 	return r.tree.Search(path, params, paramsCount)
 }
 
-func parsePath(path string) (bool, []string) {
-	params := make([]string, 0, 2)
-	dynamic := false
-
+func analyzePath(path string) (bool, int) {
+	paramCount := 0
 	for i := 0; i < len(path); i++ {
 		switch path[i] {
-		case '*':
-			dynamic = true
-			return dynamic, params
 		case ':':
-			dynamic = true
-			i++
-			end := i
-
-			for end < len(path) && path[end] != '/' {
-				end++
-			}
-
-			params = append(params, path[i:end])
-			i = end - 1
+			paramCount++
+		case '*':
+			return true, paramCount
 		}
 	}
 
-	return dynamic, params
+	return paramCount > 0, paramCount
 }
