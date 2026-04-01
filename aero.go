@@ -81,32 +81,32 @@ func New(config ...Config) *App {
 	return app
 }
 
-func (a *App) GET(path string, handlers ...HandlerFunc) {
-	a.add(http.MethodGet, path, handlers)
+func (a *App) GET(path string, h HandlerFunc, m ...HandlerFunc) {
+	a.add(http.MethodGet, path, applyMiddlewares(h, m))
 }
 
-func (a *App) POST(path string, handlers ...HandlerFunc) {
-	a.add(http.MethodPost, path, handlers)
+func (a *App) POST(path string, h HandlerFunc, m ...HandlerFunc) {
+	a.add(http.MethodPost, path, applyMiddlewares(h, m))
 }
 
-func (a *App) PUT(path string, handlers ...HandlerFunc) {
-	a.add(http.MethodPut, path, handlers)
+func (a *App) PUT(path string, h HandlerFunc, m ...HandlerFunc) {
+	a.add(http.MethodPut, path, applyMiddlewares(h, m))
 }
 
-func (a *App) PATCH(path string, handlers ...HandlerFunc) {
-	a.add(http.MethodPatch, path, handlers)
+func (a *App) PATCH(path string, h HandlerFunc, m ...HandlerFunc) {
+	a.add(http.MethodPatch, path, applyMiddlewares(h, m))
 }
 
-func (a *App) DELETE(path string, handlers ...HandlerFunc) {
-	a.add(http.MethodDelete, path, handlers)
+func (a *App) DELETE(path string, h HandlerFunc, m ...HandlerFunc) {
+	a.add(http.MethodDelete, path, applyMiddlewares(h, m))
 }
 
-func (a *App) HEAD(path string, handlers ...HandlerFunc) {
-	a.add(http.MethodHead, path, handlers)
+func (a *App) HEAD(path string, h HandlerFunc, m ...HandlerFunc) {
+	a.add(http.MethodHead, path, applyMiddlewares(h, m))
 }
 
-func (a *App) OPTIONS(path string, handlers ...HandlerFunc) {
-	a.add(http.MethodOptions, path, handlers)
+func (a *App) OPTIONS(path string, h HandlerFunc, m ...HandlerFunc) {
+	a.add(http.MethodOptions, path, applyMiddlewares(h, m))
 }
 
 func (a *App) Use(handlers ...HandlerFunc) {
@@ -194,4 +194,13 @@ func (a *App) ListenTLS(addr, cert, key string) error {
 	defer cancel()
 
 	return sc.StartTLS(ctx, a)
+}
+
+func applyMiddlewares(h HandlerFunc, m []HandlerFunc) []HandlerFunc {
+	handlers := make([]HandlerFunc, 0, len(m)+1)
+
+	handlers = append(handlers, m...)
+	handlers = append(handlers, h)
+
+	return handlers
 }

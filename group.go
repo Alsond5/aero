@@ -12,32 +12,32 @@ func (g *Group) Use(middleware ...HandlerFunc) {
 	g.middlewares = append(g.middlewares, middleware...)
 }
 
-func (g *Group) GET(path string, handlers ...HandlerFunc) {
-	g.add(http.MethodGet, path, handlers)
+func (g *Group) GET(path string, h HandlerFunc, m ...HandlerFunc) {
+	g.add(http.MethodGet, path, h, m)
 }
 
-func (g *Group) POST(path string, handlers ...HandlerFunc) {
-	g.add(http.MethodPost, path, handlers)
+func (g *Group) POST(path string, h HandlerFunc, m ...HandlerFunc) {
+	g.add(http.MethodPost, path, h, m)
 }
 
-func (g *Group) PUT(path string, handlers ...HandlerFunc) {
-	g.add(http.MethodPut, path, handlers)
+func (g *Group) PUT(path string, h HandlerFunc, m ...HandlerFunc) {
+	g.add(http.MethodPut, path, h, m)
 }
 
-func (g *Group) PATCH(path string, handlers ...HandlerFunc) {
-	g.add(http.MethodPatch, path, handlers)
+func (g *Group) PATCH(path string, h HandlerFunc, m ...HandlerFunc) {
+	g.add(http.MethodPatch, path, h, m)
 }
 
-func (g *Group) DELETE(path string, handlers ...HandlerFunc) {
-	g.add(http.MethodDelete, path, handlers)
+func (g *Group) DELETE(path string, h HandlerFunc, m ...HandlerFunc) {
+	g.add(http.MethodDelete, path, h, m)
 }
 
-func (g *Group) HEAD(path string, handlers ...HandlerFunc) {
-	g.add(http.MethodHead, path, handlers)
+func (g *Group) HEAD(path string, h HandlerFunc, m ...HandlerFunc) {
+	g.add(http.MethodHead, path, h, m)
 }
 
-func (g *Group) OPTIONS(path string, handlers ...HandlerFunc) {
-	g.add(http.MethodOptions, path, handlers)
+func (g *Group) OPTIONS(path string, h HandlerFunc, m ...HandlerFunc) {
+	g.add(http.MethodOptions, path, h, m)
 }
 
 func (g *Group) Group(prefix string, m ...HandlerFunc) (group *Group) {
@@ -50,16 +50,15 @@ func (g *Group) Group(prefix string, m ...HandlerFunc) (group *Group) {
 	return
 }
 
-func (g *Group) add(method, path string, handlers []HandlerFunc) {
+func (g *Group) add(method, path string, h HandlerFunc, m []HandlerFunc) {
 	path = g.prefix + path
 
-	if len(g.middlewares) > 0 {
-		m := make([]HandlerFunc, 0, len(g.middlewares)+len(handlers))
-		m = append(m, g.middlewares...)
-		m = append(m, handlers...)
+	totalCapacity := len(g.middlewares) + len(m) + 1
+	handlers := make([]HandlerFunc, 0, totalCapacity)
 
-		handlers = m
-	}
+	handlers = append(handlers, g.middlewares...)
+	handlers = append(handlers, m...)
+	handlers = append(handlers, h)
 
 	g.app.add(method, path, handlers)
 }
