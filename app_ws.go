@@ -1,20 +1,79 @@
 package aero
 
-import "github.com/Alsond5/aero/websocket"
+import (
+	"slices"
+	"sync"
+	"time"
 
-var defaultUpgrader = &websocket.Upgrader{}
+	"github.com/Alsond5/aero/websocket"
+)
 
-type WSHandlerFunc func(ws *Websocket)
+const bufSize = 4 << 10
+
+var connPool = sync.Pool{
+	New: func() any {
+		b := make(buffer, 0, bufSize)
+
+		return &WSConn{
+			buf:    &b,
+			locals: make(map[string]any),
+		}
+	},
+}
+
+type WebSocketHandler func(*WSConn)
 
 type WSConfig struct {
-	MaxMessageSize uint64
+	Subprotocols     []string
+	WriteTimeout     time.Duration
+	Origins          []string
+	AllowEmptyOrigin bool
+	MaxMessageSize   uint64
 }
 
-func NewWebsocket(handler WSHandlerFunc, config WSConfig) HandlerFunc {
-	return NewWebsocketWithUpgrader(handler, defaultUpgrader, config)
+func defaultWSConfig() WSConfig {
+	return WSConfig{
+		MaxMessageSize:   1 << 20,
+		Origins:          []string{"*"},
+		AllowEmptyOrigin: true,
+	}
 }
 
-func NewWebsocketWithUpgrader(handler WSHandlerFunc, upgrader *websocket.Upgrader, config WSConfig) HandlerFunc {
+func setConfig(dst, src *WSConfig) {
+	if src.MaxMessageSize > 0 {
+		dst.MaxMessageSize = src.MaxMessageSize
+	}
+}
+
+func WebSocket(fn WebSocketHandler, config ...WSConfig) HandlerFunc {
+	cfg := defaultWSConfig()
+	if len(config) > 0 {
+		setConfig(&cfg, &config[0])
+	}
+
+	hasWildcard := slices.Contains(cfg.Origins, "*")
+
+	maxMessageSize := uint64(1 << 20)
+	if cfg.MaxMessageSize > 0 {
+		maxMessageSize = cfg.MaxMessageSize
+	}
+
+	var upgrader = websocket.Upgrader{
+		Subprotocols: cfg.Subprotocols,
+		WriteTimeout: cfg.WriteTimeout,
+		CheckOrigin: func(origin string) bool {
+			if len(cfg.Origins) == 1 && cfg.Origins[0] == "*" {
+				return true
+			}
+
+			if origin == "" {
+				return hasWildcard || cfg.AllowEmptyOrigin
+			}
+
+			return slices.Contains(cfg.Origins, origin)
+		},
+	}
+
 	return func(c *Ctx) error {
 		conn, err := upgrader.Upgrade(c.w, c.r)
 		if err != nil {
@@ -24,21 +83,28 @@ func NewWebsocketWithUpgrader(handler WSHandlerFunc, upgrader *websocket.Upgrade
 		c.isHijacked = true
 		c.app.pool.Put(c)
 
-		ws := wsPool.Get().(*Websocket)
-		ws.conn = conn
-		ws.maxMessageSize = config.MaxMessageSize
-		if ws.maxMessageSize == 0 {
-			ws.maxMessageSize = 8 * 1024 * 1024
-		}
-
+		ws := acquireConn(conn)
 		defer func() {
 			ws.Close()
-			ws.reset()
-
-			wsPool.Put(ws)
+			releaseConn(ws)
 		}()
 
-		handler(ws)
+		ws.maxMessageSize = maxMessageSize
+
+		fn(ws)
 		return nil
 	}
+}
+
+func acquireConn(conn *websocket.Conn) *WSConn {
+	ws := connPool.Get().(*WSConn)
+	ws.conn = conn
+
+	return ws
+}
+
+func releaseConn(ws *WSConn) {
+	clear(ws.locals)
+
+	connPool.Put(ws)
 }

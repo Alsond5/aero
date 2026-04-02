@@ -2,44 +2,53 @@ package aero
 
 import (
 	"errors"
-	"sync"
 
 	"github.com/Alsond5/aero/websocket"
 )
 
+type WSMessageType string
+
 const (
-	DefaultBufSize = 4 << 10
-	MaxIdleBufSize = 64 << 10
+	WSMessageText   WSMessageType = "text"
+	WSMessageBinary WSMessageType = "binary"
 )
 
-var wsPool = sync.Pool{
-	New: func() any {
-		return &Websocket{
-			msgBuf: make([]byte, 0, DefaultBufSize),
-			locals: make(map[string]any),
-		}
-	},
+func opToMsgTyp(op websocket.OpCode) WSMessageType {
+	if !op.IsData() {
+		return ""
+	}
+
+	switch op {
+	case websocket.OpText:
+		return WSMessageText
+	case websocket.OpBinary:
+		return WSMessageBinary
+	}
+
+	return ""
 }
 
-type Websocket struct {
+func msgTypToOp(mt WSMessageType) websocket.OpCode {
+	switch mt {
+	case WSMessageText:
+		return websocket.OpText
+	case WSMessageBinary:
+		return websocket.OpBinary
+	}
+
+	return websocket.OpText
+}
+
+type buffer []byte
+
+type WSConn struct {
 	conn           *websocket.Conn
-	msgBuf         []byte
 	maxMessageSize uint64
+	buf            *buffer
 	locals         map[string]any
 }
 
-func (ws *Websocket) reset() {
-	if cap(ws.msgBuf) > MaxIdleBufSize {
-		ws.msgBuf = make([]byte, 0, DefaultBufSize)
-	} else {
-		ws.msgBuf = ws.msgBuf[:0]
-	}
-	ws.conn = nil
-	ws.maxMessageSize = 0
-	clear(ws.locals)
-}
-
-func (ws *Websocket) Locals(key string, value ...any) any {
+func (ws *WSConn) Locals(key string, value ...any) any {
 	if len(value) > 0 {
 		ws.locals[key] = value[0]
 		return nil
@@ -48,23 +57,23 @@ func (ws *Websocket) Locals(key string, value ...any) any {
 	return ws.locals[key]
 }
 
-func (ws *Websocket) ReadMessage() (websocket.OpCode, []byte, error) {
-	ws.msgBuf = ws.msgBuf[:0]
+func (ws *WSConn) ReadMessage() (WSMessageType, []byte, error) {
+	*ws.buf = (*ws.buf)[:0]
+	msgBuf := *ws.buf
 
 	var firstOp websocket.OpCode
 	var isFirst = true
-
 	var hdr websocket.Header
 
 	for {
 		err := ws.conn.NextHeader(&hdr)
 		if err != nil {
-			return 0, nil, err
+			return "", nil, err
 		}
 
-		if uint64(len(ws.msgBuf))+hdr.Length > ws.maxMessageSize {
+		if uint64(len(msgBuf))+hdr.Length > ws.maxMessageSize {
 			ws.conn.CloseWithError(websocket.CloseMessageTooBig, "message too big")
-			return 0, nil, errors.New("aero: maximum message size exceeded")
+			return "", nil, errors.New("aero: maximum message size exceeded")
 		}
 
 		if isFirst {
@@ -72,35 +81,35 @@ func (ws *Websocket) ReadMessage() (websocket.OpCode, []byte, error) {
 			isFirst = false
 		}
 
-		start := len(ws.msgBuf)
+		start := len(msgBuf)
 		need := start + int(hdr.Length)
 
-		if need > cap(ws.msgBuf) {
-			newBuf := make([]byte, need, max(need, cap(ws.msgBuf)*2))
-			copy(newBuf, ws.msgBuf)
-			ws.msgBuf = newBuf
-		} else {
-			ws.msgBuf = ws.msgBuf[:need]
+		if need > cap(msgBuf) {
+			newBuf := make([]byte, need, max(need, cap(msgBuf)*2))
+			copy(newBuf, msgBuf)
+			msgBuf = newBuf
 		}
 
-		if err := ws.conn.ReadPayload(hdr, ws.msgBuf[start:]); err != nil {
-			return 0, nil, err
+		msgBuf = msgBuf[:need]
+
+		if err := ws.conn.ReadPayload(hdr, msgBuf[start:]); err != nil {
+			return "", nil, err
 		}
 
 		if hdr.Fin {
-			return firstOp, ws.msgBuf, nil
+			return opToMsgTyp(firstOp), msgBuf, nil
 		}
 	}
 }
 
-func (ws *Websocket) WriteMessage(op websocket.OpCode, payload []byte) error {
-	return ws.conn.WriteMessage(op, payload)
+func (ws *WSConn) WriteMessage(mt WSMessageType, payload []byte) error {
+	return ws.conn.WriteMessage(msgTypToOp(mt), payload)
 }
 
-func (ws *Websocket) Close() error {
+func (ws *WSConn) Close() error {
 	return ws.conn.Close()
 }
 
-func (ws *Websocket) CloseWithReason(code websocket.CloseStaatusCode, reason string) error {
+func (ws *WSConn) CloseWithReason(code websocket.CloseStaatusCode, reason string) error {
 	return ws.conn.CloseWithError(code, reason)
 }
