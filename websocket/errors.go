@@ -8,6 +8,13 @@ import (
 )
 
 var (
+	ErrBadMethod              = errors.New("websocket: request method must be GET")
+	ErrBadProtocol            = errors.New("websocket: HTTP version must be at least 1.1")
+	ErrBadHost                = errors.New("websocket: missing Host header")
+	ErrBadUpgrade             = errors.New("websocket: missing or invalid Upgrade header")
+	ErrBadConnection          = errors.New("websocket: missing or invalid Connection header")
+	ErrBadSecKey              = errors.New("websocket: missing or invalid Sec-WebSocket-Key")
+	ErrBadSecVersion          = errors.New("websocket: missing Sec-WebSocket-Version")
 	ErrHeaderLengthUnexpected = errors.New("websocket: header length is too large")
 	ErrConnClosed             = errors.New("websocket: connection closed")
 	ErrFrameTooLarge          = errors.New("websocket: frame too large")
@@ -17,6 +24,8 @@ var (
 	ErrBadWebSocketVersion    = errors.New("websocket: client must use version 13")
 	ErrBadWebSocketKeyLen     = errors.New("websocket: invalid Sec-WebSocket-Key length")
 	ErrForbiddenOrigin        = errors.New("websocket: origin not allowed")
+	ErrHijackNotSupport       = errors.New("websocket: response does not support hijacking")
+	ErrUpgradeRequired        = errors.New("websocket: unsupported Sec-WebSocket-Version, only 13 is supported")
 )
 
 type CloseError struct {

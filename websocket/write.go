@@ -1,8 +1,7 @@
 package websocket
 
 import (
-	"encoding/binary"
-	"io"
+	"bufio"
 )
 
 const (
@@ -11,41 +10,63 @@ const (
 	MaxFrameLength = 1<<63 - 1
 )
 
-func WriteHeader(w io.Writer, h Header) error {
-	var buf [MaxHeaderSize]byte
-	buf[0] = h.Rsv<<4 | byte(h.OpCode)
+func WriteHeader(w *bufio.Writer, h Header) error {
+	b0 := h.Rsv<<4 | byte(h.OpCode)
 	if h.Fin {
-		buf[0] |= 0x80
+		b0 |= 0x80
+	}
+	if err := w.WriteByte(b0); err != nil {
+		return err
 	}
 
-	var n int
+	var b1 byte
 	switch {
 	case h.Length > MaxFrameLength:
 		return ErrHeaderLengthUnexpected
 	case h.Length > 65535:
-		buf[1] = 127
-		binary.BigEndian.PutUint64(buf[2:10], h.Length)
-		n = 10
+		b1 = 127
 	case h.Length > 125:
-		buf[1] = 126
-		binary.BigEndian.PutUint16(buf[2:4], uint16(h.Length))
-		n = 4
+		b1 = 126
 	default:
-		buf[1] = byte(h.Length)
-		n = 2
+		b1 = byte(h.Length)
 	}
 
 	if h.Masked {
-		buf[1] |= 0x80
-		n += copy(buf[n:], h.Mask[:])
+		b1 |= 0x80
+	}
+	if err := w.WriteByte(b1); err != nil {
+		return err
 	}
 
-	_, err := w.Write(buf[:n])
+	switch {
+	case h.Length > 65535:
+		l := h.Length
+		for i := 7; i >= 0; i-- {
+			if err := w.WriteByte(byte(l >> (uint(i) * 8))); err != nil {
+				return err
+			}
+		}
+	case h.Length > 125:
+		if err := w.WriteByte(byte(h.Length >> 8)); err != nil {
+			return err
+		}
+		if err := w.WriteByte(byte(h.Length)); err != nil {
+			return err
+		}
+	}
 
-	return err
+	if h.Masked {
+		for i := range 4 {
+			if err := w.WriteByte(h.Mask[i]); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
-func WriteFrame(w io.Writer, f Frame) error {
+func WriteFrame(w *bufio.Writer, f Frame) error {
 	err := WriteHeader(w, f.Header)
 	if err != nil {
 		return err

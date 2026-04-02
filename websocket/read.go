@@ -1,48 +1,67 @@
 package websocket
 
 import (
+	"bufio"
 	"encoding/binary"
-	"io"
-	"unsafe"
 )
 
-func ReadHeader(r io.Reader, dst *Header) error {
-	var buf [MaxHeaderSize]byte
-	if _, err := io.ReadFull(r, buf[:2]); err != nil {
+func ReadHeader(r *bufio.Reader, dst *Header) error {
+	b0, err := r.ReadByte()
+	if err != nil {
 		return err
 	}
 
-	dst.Fin = buf[0]&0x80 != 0
-	dst.Rsv = (buf[0] >> 4) & 0x7
-	dst.OpCode = OpCode(buf[0] & 0x0F)
-	dst.Masked = buf[1]&0x80 != 0
+	b1, err := r.ReadByte()
+	if err != nil {
+		return err
+	}
 
-	length := uint64(buf[1] & 0x7F)
+	dst.Fin = b0&0x80 != 0
+	dst.Rsv = (b0 >> 4) & 0x7
+	dst.OpCode = OpCode(b0 & 0x0F)
+	dst.Masked = b1&0x80 != 0
+
+	length := uint64(b1 & 0x7F)
 	switch {
-	case length < uint64(126):
+	case length < 126:
 		dst.Length = length
-	case length == 126:
-		if _, err := io.ReadFull(r, buf[:2]); err != nil {
-			return err
-		}
 
-		dst.Length = uint64(binary.BigEndian.Uint16(buf[:2]))
-	case length == 127:
-		if _, err := io.ReadFull(r, buf[:8]); err != nil {
+	case length == 126:
+		b0, err = r.ReadByte()
+		if err != nil {
 			return err
 		}
-		if buf[0]&0x80 != 0 {
+		b1, err = r.ReadByte()
+		if err != nil {
+			return err
+		}
+		dst.Length = uint64(b0)<<8 | uint64(b1)
+
+	case length == 127:
+		var l uint64
+		for range 8 {
+			b, err := r.ReadByte()
+			if err != nil {
+				return err
+			}
+			l = l<<8 | uint64(b)
+		}
+		if l&(1<<63) != 0 {
 			return ErrHeaderLengthUnexpected
 		}
+		dst.Length = l
 
-		dst.Length = binary.BigEndian.Uint64(buf[:8])
 	default:
 		return ErrHeaderLengthUnexpected
 	}
 
 	if dst.Masked {
-		if _, err := io.ReadFull(r, dst.Mask[:]); err != nil {
-			return err
+		for i := range 4 {
+			b, err := r.ReadByte()
+			if err != nil {
+				return err
+			}
+			dst.Mask[i] = b
 		}
 	}
 
@@ -67,8 +86,4 @@ func ParseCloseFrameDataUnsafe(payload []byte) (code CloseStaatusCode, reason st
 	reason = unsafeByteToString(payload[2:])
 
 	return code, reason
-}
-
-func unsafeByteToString(buf []byte) (str string) {
-	return *(*string)(unsafe.Pointer(&buf))
 }

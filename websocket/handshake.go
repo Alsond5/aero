@@ -4,48 +4,27 @@ import (
 	"bufio"
 	"crypto/sha1"
 	"encoding/base64"
-	"errors"
-	"io"
 	"net/http"
+	"strings"
+	"time"
 )
 
 const magicGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
-var upgradeResponse = "HTTP/1.1 101 Switching Protocols\r\n" +
-	"Upgrade: websocket\r\n" +
-	"Connection: Upgrade\r\n" +
-	"Sec-WebSocket-Accept: "
-
 type Upgrader struct {
 	CheckOrigin  func(origin string) bool
 	Subprotocols []string
-	Extensions   []string
+	WriteTimeout time.Duration
+}
+
+type Handshake struct {
+	protocol string
 }
 
 func (u *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request) (*Conn, error) {
-	if !isWebSocketUpgrade(r) {
-		return nil, ErrNotWebSocket
-	}
-
-	if r.Header.Get("Sec-WebSocket-Version") != "13" {
-		return nil, ErrBadWebSocketVersion
-	}
-
-	clientKey := r.Header.Get("Sec-WebSocket-Key")
-	if err := validateKey(clientKey); err != nil {
-		return nil, err
-	}
-
-	if u.CheckOrigin != nil {
-		origin := r.Header.Get("Origin")
-		if !u.CheckOrigin(origin) {
-			return nil, ErrForbiddenOrigin
-		}
-	}
-
 	hj, ok := w.(http.Hijacker)
 	if !ok {
-		return nil, errors.New("websocket: response does not support hijacking")
+		return nil, ErrHijackNotSupport
 	}
 
 	nc, brw, err := hj.Hijack()
@@ -53,10 +32,23 @@ func (u *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request) (*Conn, error
 		return nil, err
 	}
 
-	protocol := u.negotiateSubprotocol(r)
-	extensions := u.negotiateExtensions(r)
+	nc.SetDeadline(time.Time{})
 
-	if err := write101(brw.Writer, clientKey, protocol, extensions); err != nil {
+	hs, err := u.validate(r)
+	if err != nil {
+		writeHTTPError(brw.Writer, err)
+		nc.Close()
+
+		return nil, err
+	}
+
+	if t := u.WriteTimeout; t != 0 {
+		nc.SetWriteDeadline(time.Now().Add(t))
+		defer nc.SetWriteDeadline(time.Time{})
+	}
+
+	clientKey := r.Header.Get("Sec-WebSocket-Key")
+	if err := write101(brw.Writer, clientKey, hs.protocol); err != nil {
 		nc.Close()
 		return nil, err
 	}
@@ -64,27 +56,47 @@ func (u *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request) (*Conn, error
 	return NewConn(nc, brw.Reader, brw.Writer), nil
 }
 
-func isWebSocketUpgrade(r *http.Request) bool {
-	return r.Method == http.MethodGet &&
-		headerContains(r.Header, "Connection", "upgrade") &&
-		headerContains(r.Header, "Upgrade", "websocket")
-}
+func (u *Upgrader) validate(r *http.Request) (Handshake, error) {
+	var hs Handshake
 
-func validateKey(key string) error {
-	if key == "" {
-		return ErrBadWebSocketKey
-	}
-	if len(key) != 24 {
-		return ErrBadWebSocketKeyLen
+	if r.Method != http.MethodGet {
+		return hs, ErrBadMethod
 	}
 
-	var decoded [16]byte
-	n, err := base64.StdEncoding.Decode(decoded[:], []byte(key))
-	if err != nil || n != 16 {
-		return ErrBadWebSocketKeyLen
+	if r.ProtoMajor < 1 || (r.ProtoMajor == 1 && r.ProtoMinor < 1) {
+		return hs, ErrBadProtocol
 	}
 
-	return nil
+	if r.Host == "" {
+		return hs, ErrBadHost
+	}
+
+	if !headerContainsToken(r.Header, "Upgrade", "websocket") {
+		return hs, ErrBadUpgrade
+	}
+
+	if !headerContainsToken(r.Header, "Connection", "upgrade") {
+		return hs, ErrBadConnection
+	}
+
+	if len(r.Header.Get("Sec-WebSocket-Key")) != 24 {
+		return hs, ErrBadSecKey
+	}
+
+	if v := r.Header.Get("Sec-WebSocket-Version"); v != "13" {
+		if v != "" {
+			return hs, ErrUpgradeRequired
+		}
+		return hs, ErrBadSecVersion
+	}
+
+	if u.CheckOrigin != nil && !u.CheckOrigin(r.Header.Get("Origin")) {
+		return hs, ErrForbiddenOrigin
+	}
+
+	hs.protocol = u.negotiateSubprotocol(r)
+
+	return hs, nil
 }
 
 func (u *Upgrader) negotiateSubprotocol(r *http.Request) string {
@@ -97,48 +109,29 @@ func (u *Upgrader) negotiateSubprotocol(r *http.Request) string {
 	}
 
 	for _, serverProto := range u.Subprotocols {
-		for _, clientProto := range splitHeader(clientProtos) {
-			if serverProto == clientProto {
-				return serverProto
-			}
+		if tokenListContains(clientProtos, serverProto) {
+			return serverProto
 		}
 	}
 
 	return ""
 }
 
-func (u *Upgrader) negotiateExtensions(r *http.Request) string {
-	if len(u.Extensions) == 0 {
-		return ""
-	}
-	clientExts := r.Header.Get("Sec-WebSocket-Extensions")
-	if clientExts == "" {
-		return ""
-	}
-	for _, serverExt := range u.Extensions {
-		for _, clientExt := range splitHeader(clientExts) {
-			if serverExt == clientExt {
-				return serverExt
-			}
-		}
-	}
-	return ""
-}
+func write101(bw *bufio.Writer, clientKey, protocol string) error {
+	var keyBuf [60]byte
+	copy(keyBuf[:24], clientKey)
+	copy(keyBuf[24:], magicGUID)
 
-func write101(bw *bufio.Writer, clientKey, protocol, extensions string) error {
-	bw.WriteString(upgradeResponse)
+	digest := sha1.Sum(keyBuf[:])
 
-	enc := base64.NewEncoder(base64.StdEncoding, bw)
+	var acceptBuf [28]byte
+	base64.StdEncoding.Encode(acceptBuf[:], digest[:])
 
-	h := sha1.New()
-	io.WriteString(h, clientKey)
-	io.WriteString(h, magicGUID)
-
-	var digest [sha1.Size]byte
-	h.Sum(digest[:0])
-	enc.Write(digest[:])
-	enc.Close()
-
+	bw.WriteString("HTTP/1.1 101 Switching Protocols\r\n")
+	bw.WriteString("Upgrade: websocket\r\n")
+	bw.WriteString("Connection: Upgrade\r\n")
+	bw.WriteString("Sec-WebSocket-Accept: ")
+	bw.Write(acceptBuf[:])
 	bw.WriteString("\r\n")
 
 	if protocol != "" {
@@ -147,51 +140,32 @@ func write101(bw *bufio.Writer, clientKey, protocol, extensions string) error {
 		bw.WriteString("\r\n")
 	}
 
-	if extensions != "" {
-		bw.WriteString("Sec-WebSocket-Extensions: ")
-		bw.WriteString(extensions)
-		bw.WriteString("\r\n")
-	}
-
 	bw.WriteString("\r\n")
 
 	return bw.Flush()
 }
 
-func splitHeader(s string) []string {
-	var out []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == ',' {
-			if v := trimSpace(s[start:i]); v != "" {
-				out = append(out, v)
-			}
-			start = i + 1
-		}
-	}
-	if v := trimSpace(s[start:]); v != "" {
-		out = append(out, v)
-	}
+func writeHTTPError(bw *bufio.Writer, err error) {
+	code := errorStatusCode(err)
+	status := http.StatusText(code)
 
-	return out
+	bw.WriteString("HTTP/1.1 ")
+	writeDecimal(bw, code)
+	bw.WriteByte(' ')
+	bw.WriteString(status)
+	bw.WriteString("\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+	_ = bw.Flush()
 }
 
-func trimSpace(s string) string {
-	start := 0
-	for start < len(s) && (s[start] == ' ' || s[start] == '\t') {
-		start++
-	}
-	end := len(s)
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
-		end--
-	}
-
-	return s[start:end]
+func writeDecimal(bw *bufio.Writer, n int) {
+	bw.WriteByte(byte('0' + (n/100)%10))
+	bw.WriteByte(byte('0' + (n/10)%10))
+	bw.WriteByte(byte('0' + n%10))
 }
 
-func headerContains(h http.Header, key, token string) bool {
+func headerContainsToken(h http.Header, key, token string) bool {
 	for _, v := range h[http.CanonicalHeaderKey(key)] {
-		if asciiEqualFold(v, token) {
+		if tokenListContains(v, token) {
 			return true
 		}
 	}
@@ -199,26 +173,36 @@ func headerContains(h http.Header, key, token string) bool {
 	return false
 }
 
-func asciiEqualFold(s, t string) bool {
-	if len(s) != len(t) {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		sr, tr := s[i], t[i]
-		if sr == tr {
-			continue
+func tokenListContains(list, token string) bool {
+	for len(list) > 0 {
+		i := strings.IndexByte(list, ',')
+		var part string
+		if i < 0 {
+			part = list
+			list = ""
+		} else {
+			part = list[:i]
+			list = list[i+1:]
 		}
 
-		if 'A' <= sr && sr <= 'Z' {
-			sr += 'a' - 'A'
-		}
-		if 'A' <= tr && tr <= 'Z' {
-			tr += 'a' - 'A'
-		}
-		if sr != tr {
-			return false
+		part = strings.TrimSpace(part)
+		if strings.EqualFold(part, token) {
+			return true
 		}
 	}
 
-	return true
+	return false
+}
+
+func errorStatusCode(err error) int {
+	switch err {
+	case ErrUpgradeRequired:
+		return http.StatusUpgradeRequired
+	case ErrForbiddenOrigin:
+		return http.StatusForbidden
+	case ErrBadMethod:
+		return http.StatusMethodNotAllowed
+	default:
+		return http.StatusBadRequest
+	}
 }
