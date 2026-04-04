@@ -8,7 +8,7 @@ type MethodNotAllowedHandler func(allowed string, c *Ctx)
 
 func defaultErrorHandler(c *Ctx, err error) {
 	if !c.written {
-		http.Error(c.w, err.Error(), http.StatusInternalServerError)
+		http.Error(c.w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 }
 

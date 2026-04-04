@@ -24,6 +24,7 @@ type Ctx struct {
 	written     bool
 	queryParsed bool
 	formParsed  bool
+	isHijacked  bool
 }
 
 func (c *Ctx) Next() error {

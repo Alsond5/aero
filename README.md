@@ -10,6 +10,7 @@ Blazing fast, zero-dependency, lightweight web framework for Go.
 - Auto HTTP2 support
 - Hybrid routing with O(1) static map for exact paths, Segment Trie for dynamic ones
 - Order-sensitive middleware
+- WebSocket support
 
 ## Guide
 
@@ -27,8 +28,40 @@ Requires Go 1.25+
 package main
 
 import (
-    "github.com/Alsond5/aero"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/Alsond5/aero"
 )
+
+func main() {
+	app := aero.New()
+
+	app.Use(Logger)
+
+	app.GET("/api/users/:id", func(c *aero.Ctx) error {
+		id := c.Param("id")
+		return c.JSON(map[string]string{"id": id})
+	})
+
+	app.GET("/ws", aero.WebSocket(func(ws *aero.WSConn) {
+		ws.Locals("client", "id")
+		fmt.Println(ws.Locals("client"))
+
+		for {
+			mt, msg, err := ws.ReadMessage()
+			if err != nil {
+				fmt.Println(err)
+				break
+			}
+
+			ws.WriteMessage(mt, msg)
+		}
+	}))
+
+	app.Listen(":8080")
+}
 
 func Logger(c *aero.Ctx) error {
 	start := time.Now()
@@ -44,19 +77,6 @@ func Logger(c *aero.Ctx) error {
 	)
 
 	return err
-}
-
-func main() {
-    app := aero.New()
-
-    app.Use(Logger)
-
-    app.GET("/api/users/:id", func(c *aero.Ctx) error {
-        id := c.Param("id")
-        return c.JSON(map[string]string{"id": id})
-    })
-
-    app.Listen(":8080")
 }
 ```
 

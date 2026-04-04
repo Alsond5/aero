@@ -136,7 +136,11 @@ func (a *App) add(method, path string, handlers []HandlerFunc) {
 
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := a.pool.Get().(*Ctx)
-	defer a.pool.Put(ctx)
+	defer func() {
+		if !ctx.isHijacked {
+			a.pool.Put(ctx)
+		}
+	}()
 
 	ctx.reset(w, r)
 
