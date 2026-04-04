@@ -2,6 +2,7 @@ package aero
 
 import (
 	"errors"
+	"sync"
 
 	"github.com/Alsond5/aero/websocket"
 )
@@ -39,6 +40,13 @@ func msgTypToOp(mt WSMessageType) websocket.OpCode {
 	return websocket.OpText
 }
 
+var bufPool = sync.Pool{
+	New: func() any {
+		buf := make(buffer, 0, 4096)
+		return &buf
+	},
+}
+
 type buffer []byte
 
 type WSConn struct {
@@ -58,33 +66,30 @@ func (ws *WSConn) Locals(key string, value ...any) any {
 }
 
 func (ws *WSConn) ReadMessage() (WSMessageType, []byte, error) {
-	*ws.buf = (*ws.buf)[:0]
-	msgBuf := *ws.buf
+	ws.releaseBuf()
 
-	var firstOp websocket.OpCode
-	var isFirst = true
 	var hdr websocket.Header
+	if err := ws.conn.NextHeader(&hdr); err != nil {
+		return "", nil, err
+	}
+
+	firstOp := hdr.OpCode
+
+	ws.acquireBuf()
+	msgBuf := (*ws.buf)[:0]
 
 	for {
-		err := ws.conn.NextHeader(&hdr)
-		if err != nil {
-			return "", nil, err
-		}
-
 		if uint64(len(msgBuf))+hdr.Length > ws.maxMessageSize {
 			ws.conn.CloseWithError(websocket.CloseMessageTooBig, "message too big")
 			return "", nil, errors.New("aero: maximum message size exceeded")
-		}
-
-		if isFirst {
-			firstOp = hdr.OpCode
-			isFirst = false
 		}
 
 		start := len(msgBuf)
 		need := start + int(hdr.Length)
 
 		if need > cap(msgBuf) {
+			ws.releaseBuf()
+
 			newBuf := make([]byte, need, max(need, cap(msgBuf)*2))
 			copy(newBuf, msgBuf)
 			msgBuf = newBuf
@@ -99,6 +104,10 @@ func (ws *WSConn) ReadMessage() (WSMessageType, []byte, error) {
 		if hdr.Fin {
 			return opToMsgTyp(firstOp), msgBuf, nil
 		}
+
+		if err := ws.conn.NextHeader(&hdr); err != nil {
+			return "", nil, err
+		}
 	}
 }
 
@@ -112,4 +121,21 @@ func (ws *WSConn) Close() error {
 
 func (ws *WSConn) CloseWithReason(code websocket.CloseStaatusCode, reason string) error {
 	return ws.conn.CloseWithError(code, reason)
+}
+
+func (ws *WSConn) releaseBuf() {
+	if ws.buf == nil {
+		return
+	}
+
+	bufPool.Put(ws.buf)
+	ws.buf = nil
+}
+
+func (ws *WSConn) acquireBuf() {
+	if ws.buf != nil {
+		return
+	}
+
+	ws.buf = bufPool.Get().(*buffer)
 }
