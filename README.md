@@ -117,6 +117,15 @@ func Logger(c *aero.Ctx) error {
 | Gin v1    | 61.2  | 52   | 2         | 16,339,869 |
 | Chi v5    | 179.7 | 548  | 4         | 5,564,830  |
 
+### WebSocket (2000 concurrent connections)
+
+**Test:** 2000 concurrent connections, 60s, 4 payload sizes (64B / 1KB / 4KB / 8KB), echo server
+
+| Framework | msg/s | p95 RTT | p99 RTT | max RTT | Throughput |
+|-----------|-------|---------|---------|---------|------------|
+| **Aero** | **74,566** | **30ms** | **53ms** | **104ms** | **250 MB/s** |
+| Fiber v3 | 62,978 | 37ms | 59ms | 178ms | 211 MB/s |
+
 ## Design Decisions
 
 Every feature is built on the Go standard library. No transitive vulnerabilities, no version conflicts, no go mod tidy surprises.
