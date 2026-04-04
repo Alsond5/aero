@@ -126,6 +126,15 @@ func Logger(c *aero.Ctx) error {
 | **Aero** | **74,566** | **30ms** | **53ms** | **104ms** | **250 MB/s** |
 | Fiber v3 | 62,978 | 37ms | 59ms | 178ms | 211 MB/s |
 
+### WebSocket — Push Throughput (32 clients, 5s)
+
+**Test:** Server pushes messages to 32 concurrent clients as fast as possible
+
+| Framework | msg/s |
+|-----------|-------|
+| **Aero** | **5,772,032** |
+| Fiber v3 | 5,056,723 |
+
 ## Design Decisions
 
 Every feature is built on the Go standard library. No transitive vulnerabilities, no version conflicts, no go mod tidy surprises.

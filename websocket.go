@@ -7,39 +7,6 @@ import (
 	"github.com/Alsond5/aero/websocket"
 )
 
-type WSMessageType string
-
-const (
-	WSMessageText   WSMessageType = "text"
-	WSMessageBinary WSMessageType = "binary"
-)
-
-func opToMsgTyp(op websocket.OpCode) WSMessageType {
-	if !op.IsData() {
-		return ""
-	}
-
-	switch op {
-	case websocket.OpText:
-		return WSMessageText
-	case websocket.OpBinary:
-		return WSMessageBinary
-	}
-
-	return ""
-}
-
-func msgTypToOp(mt WSMessageType) websocket.OpCode {
-	switch mt {
-	case WSMessageText:
-		return websocket.OpText
-	case WSMessageBinary:
-		return websocket.OpBinary
-	}
-
-	return websocket.OpText
-}
-
 var bufPool = sync.Pool{
 	New: func() any {
 		buf := make(buffer, 0, 4096)
@@ -65,12 +32,12 @@ func (ws *WSConn) Locals(key string, value ...any) any {
 	return ws.locals[key]
 }
 
-func (ws *WSConn) ReadMessage() (WSMessageType, []byte, error) {
+func (ws *WSConn) ReadMessage() (int, []byte, error) {
 	ws.releaseBuf()
 
 	var hdr websocket.Header
 	if err := ws.conn.NextHeader(&hdr); err != nil {
-		return "", nil, err
+		return 0, nil, err
 	}
 
 	firstOp := hdr.OpCode
@@ -81,7 +48,7 @@ func (ws *WSConn) ReadMessage() (WSMessageType, []byte, error) {
 	for {
 		if uint64(len(msgBuf))+hdr.Length > ws.maxMessageSize {
 			ws.conn.CloseWithError(websocket.CloseMessageTooBig, "message too big")
-			return "", nil, errors.New("aero: maximum message size exceeded")
+			return 0, nil, errors.New("aero: maximum message size exceeded")
 		}
 
 		start := len(msgBuf)
@@ -98,21 +65,21 @@ func (ws *WSConn) ReadMessage() (WSMessageType, []byte, error) {
 		msgBuf = msgBuf[:need]
 
 		if err := ws.conn.ReadPayload(hdr, msgBuf[start:]); err != nil {
-			return "", nil, err
+			return 0, nil, err
 		}
 
 		if hdr.Fin {
-			return opToMsgTyp(firstOp), msgBuf, nil
+			return int(firstOp), msgBuf, nil
 		}
 
 		if err := ws.conn.NextHeader(&hdr); err != nil {
-			return "", nil, err
+			return 0, nil, err
 		}
 	}
 }
 
-func (ws *WSConn) WriteMessage(mt WSMessageType, payload []byte) error {
-	return ws.conn.WriteMessage(msgTypToOp(mt), payload)
+func (ws *WSConn) WriteMessage(mt int, payload []byte) error {
+	return ws.conn.WriteMessage(websocket.OpCode(mt), payload)
 }
 
 func (ws *WSConn) Close() error {
