@@ -1,5 +1,7 @@
 package aero
 
+import "net/http"
+
 const (
 	maxParamCount    = 8
 	maxParamCountStr = "8"
@@ -13,7 +15,8 @@ const (
 	mDELETE  = 4
 	mHEAD    = 5
 	mOPTIONS = 6
-	mCount   = 7
+	mTRACE   = 7
+	mCount   = 8
 )
 
 type methodBit uint16
@@ -25,6 +28,7 @@ const (
 	methodBitPATCH  methodBit = 1 << 3
 	methodBitDELETE methodBit = 1 << 4
 	methodBitHEAD   methodBit = 1 << 5
+	methodBitTRACE  methodBit = 1 << 6
 )
 
 var methodBits = [mCount]methodBit{
@@ -34,24 +38,27 @@ var methodBits = [mCount]methodBit{
 	mPATCH:  methodBitPATCH,
 	mDELETE: methodBitDELETE,
 	mHEAD:   methodBitHEAD,
+	mTRACE:  methodBitTRACE,
 }
 
 func methodIndex(m string) int {
 	switch m {
-	case "GET":
+	case http.MethodGet:
 		return mGET
-	case "POST":
+	case http.MethodPost:
 		return mPOST
-	case "PUT":
+	case http.MethodPut:
 		return mPUT
-	case "PATCH":
+	case http.MethodPatch:
 		return mPATCH
-	case "DELETE":
+	case http.MethodDelete:
 		return mDELETE
-	case "HEAD":
+	case http.MethodHead:
 		return mHEAD
-	case "OPTIONS":
+	case http.MethodOptions:
 		return mOPTIONS
+	case http.MethodTrace:
+		return mTRACE
 	}
 
 	return -1
@@ -60,19 +67,21 @@ func methodIndex(m string) int {
 func methodString(mi int) string {
 	switch mi {
 	case mGET:
-		return "GET"
+		return http.MethodGet
 	case mPOST:
-		return "POST"
+		return http.MethodPost
 	case mPUT:
-		return "PUT"
+		return http.MethodPut
 	case mPATCH:
-		return "PATCH"
+		return http.MethodPatch
 	case mDELETE:
-		return "DELETE"
+		return http.MethodDelete
 	case mHEAD:
-		return "HEAD"
+		return http.MethodHead
 	case mOPTIONS:
-		return "OPTIONS"
+		return http.MethodOptions
+	case mTRACE:
+		return http.MethodTrace
 	}
 
 	return ""

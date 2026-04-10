@@ -109,6 +109,10 @@ func (a *App) OPTIONS(path string, h HandlerFunc, m ...HandlerFunc) {
 	a.add(http.MethodOptions, path, applyMiddlewares(h, m))
 }
 
+func (a *App) TRACE(path string, h HandlerFunc, m ...HandlerFunc) {
+	a.add(http.MethodTrace, path, applyMiddlewares(h, m))
+}
+
 func (a *App) Use(handlers ...HandlerFunc) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
