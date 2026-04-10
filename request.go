@@ -4,7 +4,6 @@ import (
 	"compress/flate"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"mime"
@@ -136,8 +135,15 @@ func (req *Req) AcceptsLanguages(langs ...string) string {
 }
 
 func (r *Req) Body() ([]byte, error) {
+	dst := make([]byte, 0, 512)
+	err := r.AppendBody(&dst)
+
+	return dst, err
+}
+
+func (r *Req) AppendBody(dst *[]byte) error {
 	if r.c.r.Body == nil {
-		return nil, ErrBodyAlreadyRead
+		return ErrBodyAlreadyRead
 	}
 
 	defer func() {
@@ -145,62 +151,40 @@ func (r *Req) Body() ([]byte, error) {
 		r.c.r.Body = nil
 	}()
 
-	var reader io.Reader = r.c.r.Body
-
 	if r.c.app.config.MaxBodySize > 0 {
 		r.c.r.Body = http.MaxBytesReader(r.c.w, r.c.r.Body, r.c.app.config.MaxBodySize)
-		reader = r.c.r.Body
 	}
+
+	reader := io.Reader(r.c.r.Body)
 
 	encoding := r.c.r.Header.Get("Content-Encoding")
 	switch encoding {
 	case "", "identity":
-
 	case "gzip":
 		gr, err := gzip.NewReader(reader)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		defer gr.Close()
 		reader = gr
-
 	case "deflate":
 		reader = flate.NewReader(reader)
-
 	default:
-		return nil, ErrUnsupportedMediaType
+		return ErrUnsupportedMediaType
 	}
 
-	data, err := io.ReadAll(reader)
+	var err error
+	*dst, err = appendReadAll(*dst, reader)
 	if err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
-			return nil, ErrBodyTooLarge
+			return ErrBodyTooLarge
 		}
 
-		return nil, err
+		return err
 	}
 
-	return data, nil
-}
-
-func (req *Req) BodyJSON(v any) error {
-	if req.c.r.Body == nil {
-		return ErrBodyAlreadyRead
-	}
-
-	defer func() {
-		req.c.r.Body.Close()
-		req.c.r.Body = nil
-	}()
-
-	var reader io.Reader = req.c.r.Body
-	if req.c.app.config.MaxBodySize > 0 {
-		req.c.r.Body = http.MaxBytesReader(req.c.w, req.c.r.Body, req.c.app.config.MaxBodySize)
-		reader = req.c.r.Body
-	}
-
-	return json.NewDecoder(reader).Decode(v)
+	return nil
 }
 
 func (r *Req) BodyReader() (io.ReadCloser, error) {
@@ -334,6 +318,14 @@ func (req *Req) Path() string {
 	}
 
 	return req.c.path
+}
+
+func (req *Req) Validate(i any) error {
+	if req.c.app.validator == nil {
+		return nil
+	}
+
+	return req.c.app.validator.Validate(i)
 }
 
 func (req *Req) Context() context.Context {
@@ -840,4 +832,31 @@ func parseInt(s string) (int64, bool) {
 	}
 
 	return n, true
+}
+
+func appendReadAll(dst []byte, r io.Reader) ([]byte, error) {
+	for {
+		if len(dst) == cap(dst) {
+			newCap := cap(dst) * 2
+			if newCap == 0 {
+				newCap = 512
+			}
+
+			tmp := make([]byte, len(dst), newCap)
+			copy(tmp, dst)
+
+			dst = tmp
+		}
+
+		n, err := r.Read(dst[len(dst):cap(dst)])
+		dst = dst[:len(dst)+n]
+
+		if err != nil {
+			if err == io.EOF {
+				return dst, nil
+			}
+
+			return dst, err
+		}
+	}
 }

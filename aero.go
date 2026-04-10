@@ -42,6 +42,7 @@ type App struct {
 	routeCount  atomic.Uint32
 	mu          sync.RWMutex
 	router      *Router
+	validator   Validator
 
 	NotFoundHandler         NotFoundHandler
 	MethodNotAllowedHandler MethodNotAllowedHandler
@@ -130,12 +131,8 @@ func (a *App) Group(prefix string, m ...HandlerFunc) (g *Group) {
 	return
 }
 
-func (a *App) add(method, path string, handlers []HandlerFunc) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	a.router.register(method, path, handlers, len(a.middlewares))
-	a.routeCount.Add(1)
+func (a *App) SetValidator(v Validator) {
+	a.validator = v
 }
 
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -202,6 +199,14 @@ func (a *App) ListenTLS(addr, cert, key string) error {
 	defer cancel()
 
 	return sc.StartTLS(ctx, a)
+}
+
+func (a *App) add(method, path string, handlers []HandlerFunc) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.router.register(method, path, handlers, len(a.middlewares))
+	a.routeCount.Add(1)
 }
 
 func applyMiddlewares(h HandlerFunc, m []HandlerFunc) []HandlerFunc {

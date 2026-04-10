@@ -41,7 +41,7 @@ func setupAero() *aero.App {
 		var s struct {
 			Name string `json:"name"`
 		}
-		c.BodyJSON(&s)
+		c.BindJSON(&s)
 		return c.SendString(s.Name)
 	})
 
