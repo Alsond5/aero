@@ -11,19 +11,6 @@ import (
 	"strings"
 )
 
-const (
-	HeaderTransferEncoding    = "Transfer-Encoding"
-	HeaderContentType         = "Content-Type"
-	HeaderContentLength       = "Content-Length"
-	HeaderLink                = "Link"
-	HeaderContentDisposition  = "Content-Disposition"
-	HeaderXContentTypeOptions = "X-Content-Type-Options"
-	HeaderReferer             = "Referer"
-	HeaderLocation            = "Location"
-	HeaderVary                = "Vary"
-	HeaderCacheControl        = "Cache-Control"
-)
-
 var (
 	ErrFileNotFound    = errors.New("aero: file not found")
 	ErrIsDirectory     = errors.New("aero: path is a directory")

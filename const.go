@@ -3,6 +3,20 @@ package aero
 import "net/http"
 
 const (
+	HeaderTransferEncoding    = "Transfer-Encoding"
+	HeaderContentType         = "Content-Type"
+	HeaderContentLength       = "Content-Length"
+	HeaderLink                = "Link"
+	HeaderContentDisposition  = "Content-Disposition"
+	HeaderXContentTypeOptions = "X-Content-Type-Options"
+	HeaderReferer             = "Referer"
+	HeaderLocation            = "Location"
+	HeaderVary                = "Vary"
+	HeaderCacheControl        = "Cache-Control"
+	HeaderConnection          = "Connection"
+)
+
+const (
 	MIMEApplicationJSON = "application/json"
 	MIMEApplicationXML  = "application/xml"
 	MIMETextXML         = "text/xml"
