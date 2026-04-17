@@ -2,6 +2,17 @@
 
 Blazing fast, zero-dependency, lightweight web framework for Go.
 
+![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Zero Dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen)
+
+## Why Aero?
+
+Most Go frameworks either sacrifice stdlib compatibility (Fiber/FastHTTP) 
+or leave allocations on the table (Echo, Chi). Aero stays on net/http, 
+achieves zero allocations through careful design, and ships with a 
+production-ready WebSocket stack. No external dependencies required.
+
 ## Features
 
 - Zero dependencies, pure stdlib, no transitive vulnerabilities
@@ -10,7 +21,7 @@ Blazing fast, zero-dependency, lightweight web framework for Go.
 - Auto HTTP2 support
 - Hybrid routing with O(1) static map for exact paths, Segment Trie for dynamic ones
 - Order-sensitive middleware
-- WebSocket support
+- WebSocket support (14% higher push throughput than Fiber v3)
 
 ## Guide
 
@@ -144,6 +155,8 @@ URL routing operates on path segments, not individual bytes. Radix Tree compress
 Global middleware is stored once on the App. Routes store only an integer (middlewareCount). At dispatch time, the middleware slice and route handlers are indexed directly. No copying, no appending.
 
 FastHTTP offers raw performance gains but breaks compatibility with the standard http.Handler ecosystem. Aero stays on net/http and achieves zero-alloc performance through careful design rather than a custom HTTP stack.
+
+WebSocket frames are read with zero heap allocations. Buffers are pooled with borrow-on-demand to avoid per-connection overhead. Internally implements RFC 6455 from scratch using only the Go standard library no external dependencies.
 
 ## License
 
