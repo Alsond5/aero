@@ -2,9 +2,9 @@ package aero
 
 import "net/http"
 
-type OptionsHandler func(allowed string, c *Ctx)
+type OptionsHandler func(allowed string, c *Ctx) error
 
-func defaultOptionsHandler(allowed string, c *Ctx) {
+func defaultOptionsHandler(allowed string, c *Ctx) error {
 	c.SetHeader("Allow", allowed)
-	c.SendStatus(http.StatusNoContent)
+	return c.SendStatus(http.StatusNoContent)
 }

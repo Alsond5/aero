@@ -147,7 +147,7 @@ func (r *Req) AppendBody(dst *[]byte) error {
 	}
 
 	defer func() {
-		r.c.r.Body.Close()
+		r.c.r.Body.Close() //nolint:errcheck
 		r.c.r.Body = nil
 	}()
 
@@ -165,7 +165,7 @@ func (r *Req) AppendBody(dst *[]byte) error {
 		if err != nil {
 			return err
 		}
-		defer gr.Close()
+		defer gr.Close() //nolint:errcheck
 		reader = gr
 	case "deflate":
 		reader = flate.NewReader(reader)
@@ -418,7 +418,7 @@ func (req *Req) Fresh() bool {
 
 	status := req.c.status
 
-	if !((status >= 200 && status < 300) || status == 304) {
+	if (status < 200 || status >= 300) && status != 304 {
 		return false
 	}
 

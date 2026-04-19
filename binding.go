@@ -153,7 +153,7 @@ func (req *Req) BindJSON(v any) error {
 	}
 
 	defer func() {
-		req.c.r.Body.Close()
+		req.c.r.Body.Close() //nolint:errcheck
 		req.c.r.Body = nil
 	}()
 
@@ -170,7 +170,7 @@ func (req *Req) BindXML(v any) error {
 	}
 
 	defer func() {
-		req.c.r.Body.Close()
+		req.c.r.Body.Close() //nolint:errcheck
 		req.c.r.Body = nil
 	}()
 

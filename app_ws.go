@@ -85,7 +85,7 @@ func WebSocket(fn WebSocketHandler, config ...WSConfig) HandlerFunc {
 
 		ws := acquireConn(conn)
 		defer func() {
-			ws.Close()
+			ws.Close() //nolint:errcheck
 			releaseConn(ws)
 		}()
 

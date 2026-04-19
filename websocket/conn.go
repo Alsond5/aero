@@ -68,7 +68,7 @@ func (c *Conn) Close() error {
 	buf[1] = 0xE8
 
 	c.writeMu.Lock()
-	c.writeFrameUnsafe(OpClose, buf[:])
+	c.writeFrameUnsafe(OpClose, buf[:]) //nolint:errcheck
 	c.writeMu.Unlock()
 
 	return c.nc.Close()
@@ -82,7 +82,7 @@ func (c *Conn) CloseWithError(code CloseStaatusCode, reason string) error {
 	n := copy(buf[2:], reason)
 
 	c.writeMu.Lock()
-	c.writeFrameUnsafe(OpClose, buf[:n+2])
+	c.writeFrameUnsafe(OpClose, buf[:n+2]) //nolint:errcheck
 	c.writeMu.Unlock()
 
 	return c.nc.Close()
@@ -111,7 +111,7 @@ func (c *Conn) handleControl(hdr *Header) error {
 
 	case OpClose:
 		c.writeMu.Lock()
-		c.writeFrameUnsafe(OpClose, payload)
+		c.writeFrameUnsafe(OpClose, payload) //nolint:errcheck
 		c.writeMu.Unlock()
 
 		if hdr.Length >= 2 {

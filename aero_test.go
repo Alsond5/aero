@@ -41,7 +41,11 @@ func setupAero() *aero.App {
 		var s struct {
 			Name string `json:"name"`
 		}
-		c.BindJSON(&s)
+		err := c.BindJSON(&s)
+		if err != nil {
+			return err
+		}
+
 		return c.SendString(s.Name)
 	})
 
@@ -71,7 +75,9 @@ func BenchmarkAero(b *testing.B) {
 	i := 0
 	for b.Loop() {
 		if i%3 == 2 {
-			reader.Seek(0, io.SeekStart)
+			if _, err := reader.Seek(0, io.SeekStart); err != nil {
+				b.Fatal(err)
+			}
 			requests[2].Body = io.NopCloser(reader)
 		}
 

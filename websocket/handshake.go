@@ -11,6 +11,16 @@ import (
 
 const magicGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
+var handshakeHeader = []byte(
+	"HTTP/1.1 101 Switching Protocols\r\n" +
+		"Upgrade: websocket\r\n" +
+		"Connection: Upgrade\r\n" +
+		"Sec-WebSocket-Accept: ",
+)
+
+var httpErrorHeader = []byte("HTTP/1.1 ")
+var httpErrorFooter = []byte("\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+
 type Upgrader struct {
 	CheckOrigin  func(origin string) bool
 	Subprotocols []string
@@ -32,24 +42,30 @@ func (u *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request) (*Conn, error
 		return nil, err
 	}
 
-	nc.SetDeadline(time.Time{})
+	if err := nc.SetDeadline(time.Time{}); err != nil {
+		return nil, err
+	}
 
 	hs, err := u.validate(r)
 	if err != nil {
 		writeHTTPError(brw.Writer, err)
-		nc.Close()
+		nc.Close() //nolint:errcheck
 
 		return nil, err
 	}
 
 	if t := u.WriteTimeout; t != 0 {
-		nc.SetWriteDeadline(time.Now().Add(t))
-		defer nc.SetWriteDeadline(time.Time{})
+		if err := nc.SetWriteDeadline(time.Now().Add(t)); err != nil {
+			nc.Close() //nolint:errcheck
+			return nil, err
+		}
+
+		defer nc.SetWriteDeadline(time.Time{}) //nolint:errcheck
 	}
 
 	clientKey := r.Header.Get("Sec-WebSocket-Key")
 	if err := write101(brw.Writer, clientKey, hs.protocol); err != nil {
-		nc.Close()
+		nc.Close() //nolint:errcheck
 		return nil, err
 	}
 
@@ -127,10 +143,7 @@ func write101(bw *bufio.Writer, clientKey, protocol string) error {
 	var acceptBuf [28]byte
 	base64.StdEncoding.Encode(acceptBuf[:], digest[:])
 
-	bw.WriteString("HTTP/1.1 101 Switching Protocols\r\n")
-	bw.WriteString("Upgrade: websocket\r\n")
-	bw.WriteString("Connection: Upgrade\r\n")
-	bw.WriteString("Sec-WebSocket-Accept: ")
+	bw.Write(handshakeHeader)
 	bw.Write(acceptBuf[:])
 	bw.WriteString("\r\n")
 
@@ -149,18 +162,19 @@ func writeHTTPError(bw *bufio.Writer, err error) {
 	code := errorStatusCode(err)
 	status := http.StatusText(code)
 
-	bw.WriteString("HTTP/1.1 ")
+	bw.Write(httpErrorHeader) //nolint:errcheck
 	writeDecimal(bw, code)
-	bw.WriteByte(' ')
-	bw.WriteString(status)
-	bw.WriteString("\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+	bw.WriteByte(' ')         //nolint:errcheck
+	bw.WriteString(status)    //nolint:errcheck
+	bw.Write(httpErrorFooter) //nolint:errcheck
+
 	_ = bw.Flush()
 }
 
 func writeDecimal(bw *bufio.Writer, n int) {
-	bw.WriteByte(byte('0' + (n/100)%10))
-	bw.WriteByte(byte('0' + (n/10)%10))
-	bw.WriteByte(byte('0' + n%10))
+	_ = bw.WriteByte(byte('0' + (n/100)%10))
+	_ = bw.WriteByte(byte('0' + (n/10)%10))
+	_ = bw.WriteByte(byte('0' + n%10))
 }
 
 func headerContainsToken(h http.Header, key, token string) bool {

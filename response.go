@@ -18,6 +18,13 @@ var (
 	ErrPathNotAbsolute = errors.New("aero: path must be absolute or root must be specified")
 )
 
+var (
+	jsonpTypeof   = []byte("/**/ typeof ")
+	jsonpFunction = []byte(" === 'function' && ")
+	jsonpOpen     = []byte("(")
+	jsonpClose    = []byte(");")
+)
+
 type Res struct {
 	c *Ctx
 }
@@ -301,15 +308,26 @@ func (res *Res) JSONP(body any, callback string) error {
 	}
 
 	w := res.c.w
-	io.WriteString(w, "/**/ typeof ")
-	io.WriteString(w, callback)
-	io.WriteString(w, " === 'function' && ")
-	io.WriteString(w, callback)
-	io.WriteString(w, "(")
+	if _, err := w.Write(jsonpTypeof); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, callback); err != nil {
+		return err
+	}
+	if _, err := w.Write(jsonpFunction); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, callback); err != nil {
+		return err
+	}
+	if _, err := w.Write(jsonpOpen); err != nil {
+		return err
+	}
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		return err
+	}
+	_, err := w.Write(jsonpClose)
 
-	json.NewEncoder(w).Encode(body)
-
-	_, err := io.WriteString(w, ");")
 	return err
 }
 
@@ -393,7 +411,7 @@ func (res *Res) SendFile(path string, opts ...SendFileOptions) error {
 		}
 		return err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	stat, err := f.Stat()
 	if err != nil {
@@ -433,7 +451,7 @@ func (res *Res) SendFileFS(fsys http.FileSystem, path string) error {
 	if err != nil {
 		return ErrFileNotFound
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	stat, err := f.Stat()
 	if err != nil {
@@ -544,13 +562,12 @@ func itoa(n int) string {
 
 func isSafeCallback(cb string) bool {
 	for _, c := range cb {
-		if !((c >= 'a' && c <= 'z') ||
-			(c >= 'A' && c <= 'Z') ||
-			(c >= '0' && c <= '9') ||
-			c == '_' || c == '$' || c == '.' ||
-			c == '[' || c == ']') {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') &&
+			c != '_' && c != '$' && c != '.' && c != '[' && c != ']' {
+
 			return false
 		}
 	}
+
 	return true
 }

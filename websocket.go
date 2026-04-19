@@ -47,7 +47,7 @@ func (ws *WSConn) ReadMessage() (int, []byte, error) {
 
 	for {
 		if uint64(len(msgBuf))+hdr.Length > ws.maxMessageSize {
-			ws.conn.CloseWithError(websocket.CloseMessageTooBig, "message too big")
+			ws.conn.CloseWithError(websocket.CloseMessageTooBig, "message too big") //nolint:errcheck
 			return 0, nil, errors.New("aero: maximum message size exceeded")
 		}
 
