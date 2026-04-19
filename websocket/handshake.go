@@ -143,14 +143,14 @@ func write101(bw *bufio.Writer, clientKey, protocol string) error {
 	var acceptBuf [28]byte
 	base64.StdEncoding.Encode(acceptBuf[:], digest[:])
 
-	bw.Write(handshakeHeader)
-	bw.Write(acceptBuf[:])
-	bw.WriteString("\r\n")
+	bw.Write(handshakeHeader) //nolint:errcheck
+	bw.Write(acceptBuf[:])    //nolint:errcheck
+	bw.WriteString("\r\n")    //nolint:errcheck
 
 	if protocol != "" {
-		bw.WriteString("Sec-WebSocket-Protocol: ")
-		bw.WriteString(protocol)
-		bw.WriteString("\r\n")
+		bw.WriteString("Sec-WebSocket-Protocol: ") //nolint:errcheck
+		bw.WriteString(protocol)                   //nolint:errcheck
+		bw.WriteString("\r\n")                     //nolint:errcheck
 	}
 
 	bw.WriteString("\r\n")

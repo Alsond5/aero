@@ -157,7 +157,11 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if route == nil {
 		if r.Method == http.MethodOptions {
-			a.OptionsHandler(ep.allowedMethods(), ctx)
+			err := a.OptionsHandler(ep.allowedMethods(), ctx)
+			if err != nil {
+				a.ErrorHandler(ctx, err)
+			}
+
 			return
 		}
 
