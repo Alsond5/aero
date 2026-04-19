@@ -153,7 +153,7 @@ func write101(bw *bufio.Writer, clientKey, protocol string) error {
 		bw.WriteString("\r\n")                     //nolint:errcheck
 	}
 
-	bw.WriteString("\r\n")
+	bw.WriteString("\r\n") //nolint:errcheck
 
 	return bw.Flush()
 }
