@@ -10,6 +10,7 @@ const (
 	MaxFrameLength = 1<<63 - 1
 )
 
+// WriteHeader encodes and writes a WebSocket frame header to w.
 func WriteHeader(w *bufio.Writer, h Header) error {
 	b0 := h.Rsv<<4 | byte(h.OpCode)
 	if h.Fin {
@@ -66,6 +67,7 @@ func WriteHeader(w *bufio.Writer, h Header) error {
 	return nil
 }
 
+// WriteFrame encodes and writes a complete WebSocket frame to w.
 func WriteFrame(w *bufio.Writer, f Frame) error {
 	err := WriteHeader(w, f.Header)
 	if err != nil {

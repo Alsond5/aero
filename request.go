@@ -31,22 +31,35 @@ var (
 	ErrUnsupportedMediaType = errors.New("aero: unsupported content encoding")
 )
 
+// Req provides access to all incoming HTTP request data.
+// It is embedded in [Ctx] and should not be instantiated directly.
 type Req struct {
 	c *Ctx
 }
 
+// Header returns the value of the named request header.
+// The name is case-insensitive. Returns an empty string if not present.
+// Alias of [Req.Get].
 func (req *Req) Header(name string) string {
 	return req.c.r.Header.Get(name)
 }
 
+// Get returns the value of the named request header.
+// The name is case-insensitive. Returns an empty string if not present.
 func (req *Req) Get(name string) string {
 	return req.Header(name)
 }
 
+// Headers returns all request headers as an [http.Header] map.
 func (req *Req) Headers() http.Header {
 	return req.c.r.Header
 }
 
+// Accepts checks the request's Accept header against the provided MIME types
+// and returns the best match, respecting quality values (q-factors).
+// Returns an empty string if none of the types are acceptable.
+//
+//	best := c.Req.Accepts("text/html", "application/json")
 func (req *Req) Accepts(types ...string) string {
 	header := req.c.r.Header.Get("Accepts")
 	if header == "" {
@@ -71,6 +84,10 @@ func (req *Req) Accepts(types ...string) string {
 	return ""
 }
 
+// AcceptsEncodings checks the Accept-Encoding header against the provided
+// encodings and returns the best match. Returns an empty string if none match.
+//
+//	enc := c.Req.AcceptsEncodings("gzip", "deflate", "identity")
 func (req *Req) AcceptsEncodings(encodings ...string) string {
 	header := req.c.r.Header.Get("Accept-Encoding")
 	if header == "" {
@@ -90,6 +107,8 @@ func (req *Req) AcceptsEncodings(encodings ...string) string {
 	return ""
 }
 
+// AcceptsCharsets checks the Accept-Charset header against the provided
+// charsets and returns the best match. Returns an empty string if none match.
 func (req *Req) AcceptsCharsets(charsets ...string) string {
 	header := req.c.r.Header.Get("Accept-Charset")
 	if header == "" {
@@ -115,6 +134,10 @@ func (req *Req) AcceptsCharsets(charsets ...string) string {
 	return ""
 }
 
+// AcceptsLanguages checks the Accept-Language header against the provided
+// language tags and returns the best match. Returns an empty string if none match.
+//
+//	lang := c.Req.AcceptsLanguages("en", "tr", "de")
 func (req *Req) AcceptsLanguages(langs ...string) string {
 	header := req.c.r.Header.Get("Accept-Language")
 	if header == "" {
@@ -134,6 +157,13 @@ func (req *Req) AcceptsLanguages(langs ...string) string {
 	return ""
 }
 
+// Body reads and returns the full request body as a byte slice.
+// It transparently decompresses gzip and deflate encoded bodies.
+// The body can only be read once; subsequent calls return [ErrBodyAlreadyRead].
+// MaxBodySize from [Config] is enforced; exceeding it returns [ErrBodyTooLarge].
+//
+// Use [Req.AppendBody] to read into an existing buffer, or
+// [Req.BodyReader] to stream the body without buffering.
 func (r *Req) Body() ([]byte, error) {
 	dst := make([]byte, 0, 512)
 	err := r.AppendBody(&dst)
@@ -141,6 +171,12 @@ func (r *Req) Body() ([]byte, error) {
 	return dst, err
 }
 
+// AppendBody reads the full request body into dst, growing the slice as needed.
+// It transparently decompresses gzip and deflate encoded bodies.
+// The body can only be read once; subsequent calls return [ErrBodyAlreadyRead].
+// MaxBodySize from [Config] is enforced; exceeding it returns [ErrBodyTooLarge].
+//
+// Prefer this over [Req.Body] when you already have a buffer to reuse.
 func (r *Req) AppendBody(dst *[]byte) error {
 	if r.c.r.Body == nil {
 		return ErrBodyAlreadyRead
@@ -187,6 +223,13 @@ func (r *Req) AppendBody(dst *[]byte) error {
 	return nil
 }
 
+// BodyReader returns the raw request body as an [io.ReadCloser] for streaming
+// reads without buffering the entire body into memory. The caller is
+// responsible for closing the reader.
+// The body can only be read once; subsequent calls return [ErrBodyAlreadyRead].
+//
+// Note: Content-Encoding decompression is not applied. Use [Req.Body] or
+// [Req.AppendBody] if transparent decompression is needed.
 func (r *Req) BodyReader() (io.ReadCloser, error) {
 	if r.c.r.Body == nil {
 		return nil, ErrBodyAlreadyRead
@@ -197,6 +240,11 @@ func (r *Req) BodyReader() (io.ReadCloser, error) {
 	return rc, nil
 }
 
+// Param returns the value of the named URL path parameter.
+// Returns an empty string if the parameter is not defined on the route.
+//
+//	// Route: /users/:id
+//	id := c.Req.Param("id")
 func (req *Req) Param(key string) string {
 	for i := range req.c.paramsCount {
 		if req.c.params[i].Key != key {
@@ -209,10 +257,16 @@ func (req *Req) Param(key string) string {
 	return ""
 }
 
+// Params returns all URL path parameters for the current route as a
+// slice of [Param] key-value pairs.
 func (req *Req) Params() []Param {
 	return req.c.params[:req.c.paramsCount]
 }
 
+// Range parses the Range header for a resource of the given size in bytes
+// and returns the requested byte ranges. If combine is true, overlapping or
+// adjacent ranges are merged into a single range.
+// Returns an error if the header is malformed or ranges are unsatisfiable.
 func (req *Req) Range(size int64, combine ...bool) (*RangeResult, error) {
 	header := req.c.r.Header.Get("Range")
 	if header == "" {
@@ -235,10 +289,16 @@ func (req *Req) Range(size int64, combine ...bool) (*RangeResult, error) {
 	return result, nil
 }
 
+// Query returns the value of the named URL query parameter.
+// Returns an empty string if the key is not present.
+//
+//	// GET /search?q=aero
+//	q := c.Req.Query("q")
 func (req *Req) Query(key string) string {
 	return req.QueryAll().Get(key)
 }
 
+// QueryAll returns all URL query parameters as [url.Values].
 func (req *Req) QueryAll() url.Values {
 	if !req.c.queryParsed {
 		req.c.query = req.c.r.URL.Query()
@@ -248,6 +308,9 @@ func (req *Req) QueryAll() url.Values {
 	return req.c.query
 }
 
+// Protocol returns the request protocol string, either "http" or "https".
+// When [Config.TrustProxy] is enabled, the X-Forwarded-Proto header is
+// consulted first.
 func (req *Req) Protocol() string {
 	if req.c.r.TLS != nil {
 		return "https"
@@ -256,10 +319,15 @@ func (req *Req) Protocol() string {
 	return "http"
 }
 
+// Secure reports whether the request was made over HTTPS.
+// Equivalent to checking Protocol() == "https".
 func (req *Req) Secure() bool {
 	return req.Protocol() == "https"
 }
 
+// IP returns the originating IP address of the request.
+// When [Config.TrustProxy] is enabled, the leftmost address in the
+// X-Forwarded-For header is returned.
 func (req *Req) IP() string {
 	if req.c.app.config.TrustProxy {
 		if xff := req.c.r.Header.Get("X-Forwarded-For"); xff != "" {
@@ -283,6 +351,9 @@ func (req *Req) IP() string {
 	return ip
 }
 
+// IPs returns all IP addresses in the X-Forwarded-For header, in order
+// from client to the nearest proxy. Returns a nil slice if the header
+// is absent or [Config.TrustProxy] is disabled.
 func (req *Req) IPs() []string {
 	xff := req.c.r.Header.Get("X-Forwarded-For")
 	if xff == "" {
@@ -300,14 +371,19 @@ func (req *Req) IPs() []string {
 	return ips
 }
 
+// OriginalURL returns the full request URL as received, including path
+// and raw query string.
 func (req *Req) OriginalURL() string {
 	return req.c.r.RequestURI
 }
 
+// BaseURL returns the base URL of the request, consisting of the protocol
+// and host only (e.g. "https://example.com").
 func (req *Req) BaseURL() string {
 	return req.c.basePath
 }
 
+// Path returns the URL path of the current request (e.g. "/users/42").
 func (req *Req) Path() string {
 	if req.c.path == "" {
 		if req.c.basePath != "" {
@@ -320,6 +396,9 @@ func (req *Req) Path() string {
 	return req.c.path
 }
 
+// Validate runs the application's configured [Validator] against i.
+// Returns an error if validation fails or if no validator has been set
+// via [App.SetValidator].
 func (req *Req) Validate(i any) error {
 	if req.c.app.validator == nil {
 		return nil
@@ -328,22 +407,30 @@ func (req *Req) Validate(i any) error {
 	return req.c.app.validator.Validate(i)
 }
 
+// Context returns the standard [context.Context] associated with the
+// current request, as provided by the underlying [http.Request].
 func (req *Req) Context() context.Context {
 	return req.c.r.Context()
 }
 
+// Cookie returns the named cookie from the request.
+// Returns [http.ErrNoCookie] if the cookie is not present.
 func (req *Req) Cookie(name string) (*http.Cookie, error) {
 	return req.c.r.Cookie(name)
 }
 
+// Cookies returns all cookies attached to the request.
 func (req *Req) Cookies() []*http.Cookie {
 	return req.c.r.Cookies()
 }
 
+// Method returns the HTTP method of the request (e.g. "GET", "POST").
 func (req *Req) Method() string {
 	return req.c.r.Method
 }
 
+// Host returns the host portion of the request, including the port if present
+// (e.g. "example.com:8080"). It reads from the Host header or the URL.
 func (req *Req) Host() string {
 	if req.c.app.config.TrustProxy {
 		if val := req.c.r.Header.Get("X-Forwarded-Host"); val != "" {
@@ -358,6 +445,8 @@ func (req *Req) Host() string {
 	return req.c.r.Header.Get("Host")
 }
 
+// Hostname returns the host portion of the request without the port
+// (e.g. "example.com").
 func (req *Req) Hostname() string {
 	host := req.Host()
 	if host == "" {
@@ -380,6 +469,12 @@ func (req *Req) Hostname() string {
 	return host
 }
 
+// Subdomains returns the subdomains of the request hostname as a slice,
+// ordered from most specific to least specific. The number of segments
+// trimmed from the right is controlled by [Config.SubdomainOffset].
+//
+//	// Host: api.v2.example.com, SubdomainOffset: 2
+//	// → ["api", "v2"]
 func (req *Req) Subdomains() []string {
 	hostname := req.Hostname()
 	if hostname == "" {
@@ -409,6 +504,10 @@ func (req *Req) Subdomains() []string {
 	return sub
 }
 
+// Fresh reports whether the request is considered fresh by comparing
+// the ETag and Last-Modified response headers against the corresponding
+// If-None-Match and If-Modified-Since request headers.
+// Typically used to implement conditional GET responses.
 func (req *Req) Fresh() bool {
 	method := req.Method()
 
@@ -439,15 +538,22 @@ func (req *Req) Fresh() bool {
 	return false
 }
 
+// Stale reports whether the request is considered stale.
+// It is the inverse of [Req.Fresh].
 func (req *Req) Stale() bool {
 	return !req.Fresh()
 }
 
+// XHR reports whether the request was made via XMLHttpRequest,
+// by checking if the X-Requested-With header equals "XMLHttpRequest".
 func (req *Req) XHR() bool {
 	val := req.Header("X-Requested-With")
 	return strings.ToLower(val) == "xmlhttprequest"
 }
 
+// FormValue returns the value of the named field from a parsed
+// application/x-www-form-urlencoded or multipart/form-data body.
+// Returns an empty string if the field is not present.
 func (req *Req) FormValue(key string) string {
 	if err := req.parseForm(); err != nil {
 		return ""
@@ -456,6 +562,8 @@ func (req *Req) FormValue(key string) string {
 	return req.c.r.FormValue(key)
 }
 
+// FormValues returns all form fields as a map of key to value slices,
+// supporting both application/x-www-form-urlencoded and multipart/form-data.
 func (req *Req) FormValues() map[string][]string {
 	if err := req.parseForm(); err != nil {
 		return nil
@@ -464,6 +572,8 @@ func (req *Req) FormValues() map[string][]string {
 	return map[string][]string(req.c.r.Form)
 }
 
+// FormFile returns the first uploaded file associated with the given form
+// field name. The caller is responsible for closing the returned [multipart.File].
 func (req *Req) FormFile(key string) (multipart.File, *multipart.FileHeader, error) {
 	if err := req.parseMultipartForm(); err != nil {
 		return nil, nil, err
@@ -472,6 +582,8 @@ func (req *Req) FormFile(key string) (multipart.File, *multipart.FileHeader, err
 	return req.c.r.FormFile(key)
 }
 
+// FormFiles returns all uploaded files for the given form field name.
+// Useful when a single field accepts multiple file uploads.
 func (req *Req) FormFiles(key string) ([]*multipart.FileHeader, error) {
 	if err := req.parseMultipartForm(); err != nil {
 		return nil, err
@@ -489,6 +601,9 @@ func (req *Req) FormFiles(key string) ([]*multipart.FileHeader, error) {
 	return files, nil
 }
 
+// MultipartReader returns a [multipart.Reader] for streaming a
+// multipart/form-data body part by part, without buffering it into memory.
+// Returns an error if the request is not multipart.
 func (req *Req) MultipartReader() (*multipart.Reader, error) {
 	if req.c.formParsed {
 		return nil, ErrFormAlreadyParsed

@@ -16,13 +16,56 @@ const (
 
 var ErrTLSCertRequired = errors.New("aero: TLS cert and key are required")
 
+// ServerConfig holds the configuration for starting an Aero server
+// with context-aware lifecycle management and graceful shutdown.
+// Use [ServerConfig.Start] or [ServerConfig.StartTLS] instead of
+// [App.Listen] when you need shutdown control via [context.Context].
+//
+//	sc := aero.ServerConfig{Addr: ":8080"}
+//	if err := sc.Start(ctx, app); err != nil {
+//		log.Fatal(err)
+//	}
 type ServerConfig struct {
-	Addr            string
-	Listener        net.Listener
-	TLSCert         string
-	TLSKey          string
+	// Addr is the TCP address to listen on (e.g. ":8080", "0.0.0.0:443").
+	// Ignored if Listener is provided.
+	Addr string
+
+	// Listener is an optional pre-configured [net.Listener]. When set,
+	// Addr is ignored and the server accepts connections from this listener.
+	// Useful for testing or socket activation scenarios.
+	Listener net.Listener
+
+	// TLSCert is the path to the TLS certificate file (PEM encoded).
+	// Required for [ServerConfig.StartTLS].
+	TLSCert string
+
+	// TLSKey is the path to the TLS private key file (PEM encoded).
+	// Required for [ServerConfig.StartTLS].
+	TLSKey string
+
+	// GracefulTimeout is the maximum duration to wait for in-flight requests
+	// to complete during shutdown. If zero, the server waits indefinitely
+	// until ctx is cancelled.
 	GracefulTimeout time.Duration
+
+	// OnShutdownError is an optional callback invoked if the graceful shutdown
+	// itself returns an error (e.g. timeout exceeded). If nil, shutdown errors
+	// are silently discarded.
 	OnShutdownError func(err error)
+}
+
+// Start starts the HTTP server and blocks until ctx is cancelled,
+// at which point it initiates a graceful shutdown — waiting for
+// in-flight requests to complete before returning.
+func (sc ServerConfig) Start(ctx context.Context, app *App) error {
+	return sc.start(ctx, app, false)
+}
+
+// StartTLS starts an HTTPS server using the certificate and key files
+// configured in ServerConfig. Blocks and shuts down gracefully on
+// ctx cancellation, same as [ServerConfig.Start].
+func (sc ServerConfig) StartTLS(ctx context.Context, app *App) error {
+	return sc.start(ctx, app, true)
 }
 
 func (sc ServerConfig) start(ctx context.Context, app *App, tls bool) error {
@@ -70,14 +113,6 @@ func (sc ServerConfig) start(ctx context.Context, app *App, tls bool) error {
 	}
 
 	return nil
-}
-
-func (sc ServerConfig) Start(ctx context.Context, app *App) error {
-	return sc.start(ctx, app, false)
-}
-
-func (sc ServerConfig) StartTLS(ctx context.Context, app *App) error {
-	return sc.start(ctx, app, true)
 }
 
 func gracefulShutdown(ctx context.Context, sc ServerConfig, server *http.Server, app *App) {

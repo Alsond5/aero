@@ -16,6 +16,22 @@ var (
 	ErrUnsupportedFieldType = errors.New("aero: unsupported field type")
 )
 
+// Bind parses the request into v by reading each struct field's tag to
+// determine the source. Supported tags are "json", "xml", "form", "query",
+// "param", and "header". A single struct can mix multiple sources; Bind
+// fills each field from the appropriate location.
+//
+//	type CreateUserReq struct {
+//		OrgID  string `param:"orgId"`
+//		Token  string `header:"X-Auth-Token"`
+//		Page   int    `query:"page"`
+//		Name   string `json:"name"`
+//	}
+//
+//	var req CreateUserReq
+//	if err := c.Req.Bind(&req); err != nil {
+//		return err
+//	}
 func (req *Req) Bind(v any) error {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Pointer || rv.Elem().Kind() != reflect.Struct {
@@ -147,6 +163,9 @@ func (req *Req) Bind(v any) error {
 	return nil
 }
 
+// BindJSON decodes the request body as JSON into v.
+// Returns an error if the Content-Type is not application/json or
+// if decoding fails.
 func (req *Req) BindJSON(v any) error {
 	if req.c.r.Body == nil {
 		return ErrBodyAlreadyRead
@@ -164,6 +183,9 @@ func (req *Req) BindJSON(v any) error {
 	return json.NewDecoder(req.c.r.Body).Decode(v)
 }
 
+// BindXML decodes the request body as XML into v.
+// Returns an error if the Content-Type is not application/xml or
+// if decoding fails.
 func (req *Req) BindXML(v any) error {
 	if req.c.r.Body == nil {
 		return ErrBodyAlreadyRead
@@ -181,6 +203,8 @@ func (req *Req) BindXML(v any) error {
 	return xml.NewDecoder(req.c.r.Body).Decode(v)
 }
 
+// BindForm parses the request body as application/x-www-form-urlencoded or
+// multipart/form-data and maps the values into v using the "form" struct tag.
 func (req *Req) BindForm(v any) error {
 	ct := req.c.r.Header.Get(HeaderContentType)
 
@@ -197,10 +221,21 @@ func (req *Req) BindForm(v any) error {
 	return mapValues(v, req.c.r.Form, "form")
 }
 
+// BindQuery maps URL query parameters into v using the "query" struct tag.
+//
+//	type SearchReq struct {
+//		Q    string `query:"q"`
+//		Page int    `query:"page"`
+//	}
 func (req *Req) BindQuery(v any) error {
 	return mapValues(v, req.QueryAll(), "query")
 }
 
+// BindParams maps URL path parameters into v using the "param" struct tag.
+//
+//	type UserReq struct {
+//		ID string `param:"id"`
+//	}
 func (req *Req) BindParams(v any) error {
 	values := make(map[string][]string, req.c.paramsCount)
 	for i := range req.c.paramsCount {
@@ -210,6 +245,12 @@ func (req *Req) BindParams(v any) error {
 	return mapValues(v, values, "param")
 }
 
+// BindHeaders maps request headers into v using the "header" struct tag.
+// Header names are case-insensitive.
+//
+//	type AuthReq struct {
+//		Token string `header:"X-Auth-Token"`
+//	}
 func (req *Req) BindHeaders(v any) error {
 	return mapValues(v, map[string][]string(req.c.r.Header), "header")
 }

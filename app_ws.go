@@ -21,14 +21,45 @@ var connPool = sync.Pool{
 	},
 }
 
+// WebSocketHandler is the function signature for WebSocket connection handlers.
+// The connection is automatically closed when the handler returns.
+//
+//	aero.WebSocket(func(ws *aero.WSConn) {
+//		for {
+//			mt, msg, err := ws.ReadMessage()
+//			if err != nil {
+//				break
+//			}
+//			ws.WriteMessage(mt, msg)
+//		}
+//	})
 type WebSocketHandler func(*WSConn)
 
+// WSConfig holds configuration options for a WebSocket endpoint.
+// All fields are optional; unset fields fall back to sensible defaults.
 type WSConfig struct {
-	Subprotocols     []string
-	WriteTimeout     time.Duration
-	Origins          []string
+	// Subprotocols is the list of supported WebSocket subprotocols.
+	// The server negotiates the best match with the client's
+	// Sec-WebSocket-Protocol header.
+	Subprotocols []string
+
+	// WriteTimeout is the maximum duration allowed for a single write
+	// operation. A zero value means no timeout.
+	WriteTimeout time.Duration
+
+	// Origins is the list of allowed Origin header values for the handshake.
+	// Requests with an origin not in this list are rejected with 403.
+	// If empty, all origins are permitted.
+	Origins []string
+
+	// AllowEmptyOrigin permits WebSocket upgrade requests that carry no
+	// Origin header. Useful for non-browser clients. Default: false.
 	AllowEmptyOrigin bool
-	MaxMessageSize   uint64
+
+	// MaxMessageSize is the maximum allowed incoming message size in bytes.
+	// Messages exceeding this limit cause the connection to be closed.
+	// A zero value means no limit.
+	MaxMessageSize uint64
 }
 
 func defaultWSConfig() WSConfig {
@@ -45,6 +76,18 @@ func setConfig(dst, src *WSConfig) {
 	}
 }
 
+// WebSocket returns a [HandlerFunc] that upgrades the HTTP connection to
+// WebSocket and calls fn with the established [WSConn]. The connection is
+// closed automatically when fn returns. An optional [WSConfig] can be
+// provided to configure subprotocols, origin policy, and message limits.
+//
+//	app.GET("/ws", aero.WebSocket(func(ws *aero.WSConn) {
+//		mt, msg, err := ws.ReadMessage()
+//		if err != nil {
+//			return
+//		}
+//		ws.WriteMessage(mt, msg)
+//	}))
 func WebSocket(fn WebSocketHandler, config ...WSConfig) HandlerFunc {
 	cfg := defaultWSConfig()
 	if len(config) > 0 {

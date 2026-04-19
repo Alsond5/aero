@@ -7,6 +7,9 @@ import (
 	"sync"
 )
 
+// Conn is a WebSocket connection over a raw [net.Conn]. It provides
+// frame-level read/write primitives. For a higher-level API, use
+// [aero.WSConn] via [aero.WebSocket].
 type Conn struct {
 	nc      net.Conn
 	br      *bufio.Reader
@@ -14,6 +17,8 @@ type Conn struct {
 	writeMu sync.Mutex
 }
 
+// NewConn wraps an established net.Conn with buffered reader and writer
+// into a WebSocket Conn ready for frame exchange.
 func NewConn(nc net.Conn, br *bufio.Reader, bw *bufio.Writer) *Conn {
 	return &Conn{
 		nc: nc,
@@ -22,6 +27,9 @@ func NewConn(nc net.Conn, br *bufio.Reader, bw *bufio.Writer) *Conn {
 	}
 }
 
+// NextHeader reads and returns the next frame header from the connection
+// into hdr. Must be called before [Conn.ReadPayload] for each frame.
+// Returns an error if the connection is closed or the frame is malformed.
 func (c *Conn) NextHeader(hdr *Header) error {
 	for {
 		if err := ReadHeader(c.br, hdr); err != nil {
@@ -39,6 +47,9 @@ func (c *Conn) NextHeader(hdr *Header) error {
 	}
 }
 
+// ReadPayload reads the payload of the frame described by hdr into dst.
+// dst must be pre-allocated to at least hdr.Length bytes.
+// Unmasking is applied automatically if the frame is masked.
 func (c *Conn) ReadPayload(hdr Header, dst []byte) error {
 	if hdr.Length == 0 {
 		return nil
@@ -55,6 +66,8 @@ func (c *Conn) ReadPayload(hdr Header, dst []byte) error {
 	return nil
 }
 
+// WriteMessage sends a single unfragmented message with the given opcode
+// and payload. It is safe to call from a single goroutine at a time.
 func (c *Conn) WriteMessage(op OpCode, payload []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
@@ -62,6 +75,7 @@ func (c *Conn) WriteMessage(op OpCode, payload []byte) error {
 	return c.writeFrameUnsafe(op, payload)
 }
 
+// Close sends a normal closure frame and closes the underlying connection.
 func (c *Conn) Close() error {
 	var buf [2]byte
 	buf[0] = 0x03
@@ -74,7 +88,9 @@ func (c *Conn) Close() error {
 	return c.nc.Close()
 }
 
-func (c *Conn) CloseWithError(code CloseStaatusCode, reason string) error {
+// CloseWithError sends a close frame with the given status code and reason
+// before closing the underlying connection.
+func (c *Conn) CloseWithError(code CloseStatusCode, reason string) error {
 	var buf [maxControlPayload]byte
 	buf[0] = byte(code >> 8)
 	buf[1] = byte(code)

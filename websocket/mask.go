@@ -5,6 +5,11 @@ import (
 	"unsafe"
 )
 
+// Mask applies the WebSocket masking algorithm in-place on b using the
+// 4-byte key. It processes 8 bytes at a time via unsafe uint64 XOR for
+// maximum throughput, falling back to byte-by-byte for the remainder.
+// Masking and unmasking use the same operation, so calling Mask twice
+// restores the original data.
 func Mask(key [4]byte, b []byte) {
 	if len(b) == 0 {
 		return

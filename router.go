@@ -2,13 +2,13 @@ package aero
 
 type staticTable map[string]*endpoint
 
-type Router struct {
+type router struct {
 	tree   *segmentTrie
 	static staticTable
 }
 
-func NewRouter() *Router {
-	r := &Router{
+func newRouter() *router {
+	r := &router{
 		tree:   newSegmentTrie(),
 		static: make(staticTable, 10),
 	}
@@ -16,7 +16,7 @@ func NewRouter() *Router {
 	return r
 }
 
-func (r *Router) register(method, path string, handlers []HandlerFunc, middlewareCount int) {
+func (r *router) register(method, path string, handlers []HandlerFunc, middlewareCount int) {
 	mi := methodIndex(method)
 	if mi == -1 {
 		panic("unsupported HTTP method: " + method)
@@ -36,7 +36,7 @@ func (r *Router) register(method, path string, handlers []HandlerFunc, middlewar
 	}
 
 	if dynamic {
-		r.tree.Insert(path, mi, route)
+		r.tree.insert(path, mi, route)
 	} else {
 		ep, ok := r.static[path]
 		if !ok {
@@ -48,12 +48,12 @@ func (r *Router) register(method, path string, handlers []HandlerFunc, middlewar
 	}
 }
 
-func (r *Router) match(path string, params *ParamValues, paramsCount *int) *endpoint {
+func (r *router) match(path string, params *ParamValues, paramsCount *int) *endpoint {
 	if ep, ok := r.static[path]; ok {
 		return ep
 	}
 
-	return r.tree.Search(path, params, paramsCount)
+	return r.tree.search(path, params, paramsCount)
 }
 
 func analyzePath(path string) (bool, int) {

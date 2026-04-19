@@ -16,6 +16,9 @@ var bufPool = sync.Pool{
 
 type buffer []byte
 
+// WSConn is an Aero WebSocket connection. It wraps the underlying low-level
+// connection and provides a high-level API for reading, writing, and
+// connection-scoped storage. Obtain a WSConn inside a [WebSocketHandler].
 type WSConn struct {
 	conn           *websocket.Conn
 	maxMessageSize uint64
@@ -23,6 +26,12 @@ type WSConn struct {
 	locals         map[string]any
 }
 
+// Locals stores or retrieves a connection-scoped value by key. When called
+// with a value argument, it sets the key and returns the new value.
+// When called with the key only, it returns the current value or nil.
+//
+//	ws.Locals("userID", 42)
+//	id := ws.Locals("userID").(int)
 func (ws *WSConn) Locals(key string, value ...any) any {
 	if len(value) > 0 {
 		ws.locals[key] = value[0]
@@ -32,6 +41,10 @@ func (ws *WSConn) Locals(key string, value ...any) any {
 	return ws.locals[key]
 }
 
+// ReadMessage reads the next message from the connection.
+// Returns the message type (aero.TextMessage or aero.BinaryMessage),
+// the payload, and any error. A non-nil error typically means the
+// connection was closed or the message exceeded [WSConfig.MaxMessageSize].
 func (ws *WSConn) ReadMessage() (int, []byte, error) {
 	ws.releaseBuf()
 
@@ -78,15 +91,22 @@ func (ws *WSConn) ReadMessage() (int, []byte, error) {
 	}
 }
 
+// WriteMessage sends a message of the given type to the client.
+// mt should be aero.TextMessage or aero.BinaryMessage.
 func (ws *WSConn) WriteMessage(mt int, payload []byte) error {
 	return ws.conn.WriteMessage(websocket.OpCode(mt), payload)
 }
 
+// Close sends a normal closure frame and closes the underlying connection.
 func (ws *WSConn) Close() error {
 	return ws.conn.Close()
 }
 
-func (ws *WSConn) CloseWithReason(code websocket.CloseStaatusCode, reason string) error {
+// CloseWithReason sends a close frame with the given status code and reason
+// string before closing the connection.
+//
+//	ws.CloseWithReason(websocket.CloseNormalClosure, "bye")
+func (ws *WSConn) CloseWithReason(code websocket.CloseStatusCode, reason string) error {
 	return ws.conn.CloseWithError(code, reason)
 }
 

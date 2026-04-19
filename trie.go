@@ -43,7 +43,7 @@ func newSegmentTrie() *segmentTrie {
 	}
 }
 
-func (t *segmentTrie) Insert(path string, mi int, route *route) {
+func (t *segmentTrie) insert(path string, mi int, route *route) {
 	node := t.root
 
 	if path == "/" {
@@ -103,7 +103,7 @@ func (t *segmentTrie) Insert(path string, mi int, route *route) {
 	node.endpoint.setRoute(mi, route)
 }
 
-func (t *segmentTrie) Search(path string, params *ParamValues, paramsCount *int) *endpoint {
+func (t *segmentTrie) search(path string, params *ParamValues, paramsCount *int) *endpoint {
 	node := t.root
 
 	if path == "/" {

@@ -25,10 +25,16 @@ var (
 	jsonpClose    = []byte(");")
 )
 
+// Res provides methods for building and sending the HTTP response.
+// It is embedded in [Ctx] and should not be instantiated directly.
 type Res struct {
 	c *Ctx
 }
 
+// Status sets the HTTP status code for the response. Returns *Res to allow
+// method chaining before a final send call.
+//
+//	c.Res.Status(http.StatusCreated).JSON(body)
 func (res *Res) Status(code int) *Res {
 	if res.c.written || code < 100 || code > 999 {
 		return res
@@ -38,10 +44,19 @@ func (res *Res) Status(code int) *Res {
 	return res
 }
 
+// ResponseStatus returns the HTTP status code that will be (or has been)
+// written for this response. Defaults to 200 if [Res.Status] was not called.
 func (res *Res) ResponseStatus() int {
 	return res.c.status
 }
 
+// Send writes body to the response. The Content-Type is inferred from the
+// value type: []byte and string are sent as-is, all other types are JSON-encoded.
+// For 204, 304 responses the body is automatically discarded and
+// content-related headers are stripped. HEAD requests are handled correctly.
+//
+//	c.Res.Send("hello")
+//	c.Res.Send(myStruct)
 func (res *Res) Send(body any) error {
 	if res.c.written {
 		return nil
@@ -59,6 +74,7 @@ func (res *Res) Send(body any) error {
 	}
 }
 
+// SendString writes a plain string body with Content-Type text/plain.
 func (res *Res) SendString(body string) error {
 	if res.c.written {
 		return nil
@@ -81,6 +97,8 @@ func (res *Res) SendString(body string) error {
 	return nil
 }
 
+// SendBytes writes a raw byte slice body.
+// Content-Type defaults to application/octet-stream unless set beforehand.
 func (res *Res) SendBytes(body []byte) error {
 	if res.c.written {
 		return nil
@@ -93,6 +111,10 @@ func (res *Res) SendBytes(body []byte) error {
 	return res.c.send(body)
 }
 
+// JSON serializes body to JSON and writes it with Content-Type application/json.
+// Returns an error if serialization fails.
+//
+//	c.Res.JSON(map[string]any{"ok": true})
 func (res *Res) JSON(body any) error {
 	if res.c.written {
 		return nil
@@ -112,177 +134,12 @@ func (res *Res) JSON(body any) error {
 	return json.NewEncoder(res.c.w).Encode(body)
 }
 
-func (res *Res) SendStatus(code int) error {
-	if res.c.written {
-		return nil
-	}
-
-	res.c.Status(code)
-	res.c.w.WriteHeader(res.c.status)
-
-	return nil
-}
-
-func (res *Res) SetHeader(key, value string) *Res {
-	res.c.w.Header().Set(key, value)
-	return res
-}
-
-func (res *Res) AddHeader(key, value string) *Res {
-	res.c.w.Header().Add(key, value)
-	return res
-}
-
-func (res *Res) GetHeader(key string) string {
-	return res.c.w.Header().Get(key)
-}
-
-func (res *Res) DeleteHeader(key string) *Res {
-	res.c.w.Header().Del(key)
-	return res
-}
-
-type CookieOptions struct {
-	MaxAge   int
-	Path     string
-	Domain   string
-	Secure   bool
-	HttpOnly bool
-	SameSite http.SameSite
-}
-
-func (res *Res) SetCookie(name, value string, opts ...CookieOptions) *Res {
-	cookie := &http.Cookie{
-		Name:  name,
-		Value: value,
-		Path:  "/",
-	}
-
-	if len(opts) > 0 {
-		o := opts[0]
-		if o.Path != "" {
-			cookie.Path = o.Path
-		}
-		if o.MaxAge != 0 {
-			cookie.MaxAge = o.MaxAge
-		}
-
-		cookie.HttpOnly = o.HttpOnly
-		cookie.Domain = o.Domain
-		cookie.Secure = o.Secure
-		cookie.SameSite = o.SameSite
-	}
-
-	http.SetCookie(res.c.w, cookie)
-	return res
-}
-
-func (res *Res) ClearCookie(name string, opts ...CookieOptions) *Res {
-	o := CookieOptions{Path: "/"}
-	if len(opts) > 0 {
-		o = opts[0]
-		o.Path = "/"
-	}
-
-	o.MaxAge = -1
-	return res.SetCookie(name, "", o)
-}
-
-func (res *Res) Links(links map[string]string) *Res {
-	existing := res.c.w.Header().Get(HeaderLink)
-
-	var b strings.Builder
-	if existing != "" {
-		b.WriteString(existing)
-		b.WriteString(", ")
-	}
-
-	first := true
-	for rel, url := range links {
-		if !first {
-			b.WriteString(", ")
-		}
-		b.WriteByte('<')
-		b.WriteString(url)
-		b.WriteString(">; rel=\"")
-		b.WriteString(rel)
-		b.WriteByte('"')
-		first = false
-	}
-
-	res.c.w.Header().Set(HeaderLink, b.String())
-	return res
-}
-
-func (res *Res) Type(t string) *Res {
-	var ct string
-	if strings.ContainsRune(t, '/') {
-		ct = t
-	} else {
-		ext := t
-		if ext[0] != '.' {
-			ext = "." + ext
-		}
-
-		ct = mime.TypeByExtension(ext)
-		if ct == "" {
-			ct = "application/octet-stream"
-		}
-	}
-
-	res.c.w.Header().Set(HeaderContentType, ct)
-	return res
-}
-
-func (res *Res) Attachment(filename ...string) *Res {
-	if len(filename) > 0 && filename[0] != "" {
-		f := filename[0]
-
-		res.Type(filepath.Ext(f))
-		res.c.w.Header().Set(
-			HeaderContentDisposition,
-			`attachment; filename="`+f+`"`,
-		)
-	} else {
-		res.c.w.Header().Set(HeaderContentDisposition, "attachment")
-	}
-
-	return res
-}
-
-func (res *Res) Format(handlers map[string]func() error) error {
-	accept := res.c.r.Header.Get("Accept")
-	if accept == "" {
-		for ct, h := range handlers {
-			if ct == "default" {
-				continue
-			}
-
-			res.c.w.Header().Set(HeaderContentType, ct)
-			return h()
-		}
-	}
-
-	for ct, h := range handlers {
-		if ct == "default" {
-			continue
-		}
-		if strings.Contains(accept, ct) || strings.Contains(accept, "*/*") {
-			res.c.w.Header().Set(HeaderContentType, ct)
-			return h()
-		}
-	}
-
-	if h, ok := handlers["default"]; ok {
-		return h()
-	}
-
-	res.c.w.WriteHeader(406)
-	res.c.written = true
-
-	return nil
-}
-
+// JSONP sends a JSONP response by wrapping the JSON-serialized body in the
+// provided JavaScript callback. The callback name is validated against a
+// safe identifier allowlist to prevent XSS.
+//
+//	c.Res.JSONP(data, "cb")
+//	// → cb({"key":"value"});
 func (res *Res) JSONP(body any, callback string) error {
 	if res.c.written {
 		return nil
@@ -331,6 +188,242 @@ func (res *Res) JSONP(body any, callback string) error {
 	return err
 }
 
+// SendStatus writes the given HTTP status code and immediately flushes
+// the response with no body. Useful for sending header-only responses
+// such as 204 No Content or 401 Unauthorized.
+//
+//	return c.Res.SendStatus(http.StatusNoContent)
+func (res *Res) SendStatus(code int) error {
+	if res.c.written {
+		return nil
+	}
+
+	res.c.Status(code)
+	res.c.w.WriteHeader(res.c.status)
+
+	return nil
+}
+
+// SetHeader sets a response header, replacing any existing value.
+// Returns *Res for chaining.
+func (res *Res) SetHeader(key, value string) *Res {
+	res.c.w.Header().Set(key, value)
+	return res
+}
+
+// AddHeader appends a value to a response header without replacing
+// existing values. Returns *Res for chaining.
+func (res *Res) AddHeader(key, value string) *Res {
+	res.c.w.Header().Add(key, value)
+	return res
+}
+
+// GetHeader returns the current value of the named response header.
+// Returns an empty string if the header has not been set.
+func (res *Res) GetHeader(key string) string {
+	return res.c.w.Header().Get(key)
+}
+
+// DeleteHeader removes the named header from the response.
+// Returns *Res for chaining.
+func (res *Res) DeleteHeader(key string) *Res {
+	res.c.w.Header().Del(key)
+	return res
+}
+
+// CookieOptions configures the attributes of a cookie set via [Res.SetCookie]
+// or cleared via [Res.ClearCookie].
+type CookieOptions struct {
+	// MaxAge sets the cookie's Max-Age attribute in seconds.
+	// A negative value instructs the client to delete the cookie immediately.
+	MaxAge int
+
+	// Path restricts the cookie to the given URL path prefix.
+	// Defaults to "/" if empty.
+	Path string
+
+	// Domain sets the cookie's Domain attribute, controlling which hosts
+	// receive the cookie. Omit to default to the current host only.
+	Domain string
+
+	// Secure marks the cookie to be sent only over HTTPS connections.
+	Secure bool
+
+	// HttpOnly prevents the cookie from being accessed via JavaScript,
+	// mitigating XSS exposure.
+	HttpOnly bool
+
+	// SameSite controls cross-site request behaviour for the cookie.
+	// Accepts [http.SameSiteStrictMode], [http.SameSiteLaxMode], or
+	// [http.SameSiteNoneMode].
+	SameSite http.SameSite
+}
+
+// SetCookie adds a Set-Cookie header to the response with the given name,
+// value, and optional [CookieOptions] (path, domain, expiry, flags, etc.).
+// Returns *Res for chaining.
+func (res *Res) SetCookie(name, value string, opts ...CookieOptions) *Res {
+	cookie := &http.Cookie{
+		Name:  name,
+		Value: value,
+		Path:  "/",
+	}
+
+	if len(opts) > 0 {
+		o := opts[0]
+		if o.Path != "" {
+			cookie.Path = o.Path
+		}
+		if o.MaxAge != 0 {
+			cookie.MaxAge = o.MaxAge
+		}
+
+		cookie.HttpOnly = o.HttpOnly
+		cookie.Domain = o.Domain
+		cookie.Secure = o.Secure
+		cookie.SameSite = o.SameSite
+	}
+
+	http.SetCookie(res.c.w, cookie)
+	return res
+}
+
+// ClearCookie expires the named cookie on the client by setting its Max-Age
+// to -1. Optional [CookieOptions] can be provided to match the original cookie's
+// path and domain. Returns *Res for chaining.
+func (res *Res) ClearCookie(name string, opts ...CookieOptions) *Res {
+	o := CookieOptions{Path: "/"}
+	if len(opts) > 0 {
+		o = opts[0]
+		o.Path = "/"
+	}
+
+	o.MaxAge = -1
+	return res.SetCookie(name, "", o)
+}
+
+// Links sets the Link response header from the provided map of relation to URL.
+// Multiple relations are comma-separated per RFC 8288.
+//
+//	c.Res.Links(map[string]string{
+//		"next": "/page/3",
+//		"prev": "/page/1",
+//	})
+func (res *Res) Links(links map[string]string) *Res {
+	existing := res.c.w.Header().Get(HeaderLink)
+
+	var b strings.Builder
+	if existing != "" {
+		b.WriteString(existing)
+		b.WriteString(", ")
+	}
+
+	first := true
+	for rel, url := range links {
+		if !first {
+			b.WriteString(", ")
+		}
+		b.WriteByte('<')
+		b.WriteString(url)
+		b.WriteString(">; rel=\"")
+		b.WriteString(rel)
+		b.WriteByte('"')
+		first = false
+	}
+
+	res.c.w.Header().Set(HeaderLink, b.String())
+	return res
+}
+
+// Type sets the Content-Type response header. Short aliases such as "json",
+// "html", "text", and "xml" are resolved to their full MIME types.
+// Returns *Res for chaining.
+//
+//	c.Res.Type("html").SendString("<h1>Hello</h1>")
+func (res *Res) Type(t string) *Res {
+	var ct string
+	if strings.ContainsRune(t, '/') {
+		ct = t
+	} else {
+		ext := t
+		if ext[0] != '.' {
+			ext = "." + ext
+		}
+
+		ct = mime.TypeByExtension(ext)
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+	}
+
+	res.c.w.Header().Set(HeaderContentType, ct)
+	return res
+}
+
+// Attachment sets the Content-Disposition header to "attachment", prompting
+// the browser to download the response rather than display it. An optional
+// filename is included in the header when provided.
+//
+//	c.Res.Attachment("report.pdf")
+func (res *Res) Attachment(filename ...string) *Res {
+	if len(filename) > 0 && filename[0] != "" {
+		f := filename[0]
+
+		res.Type(filepath.Ext(f))
+		res.c.w.Header().Set(
+			HeaderContentDisposition,
+			`attachment; filename="`+f+`"`,
+		)
+	} else {
+		res.c.w.Header().Set(HeaderContentDisposition, "attachment")
+	}
+
+	return res
+}
+
+// Format performs content negotiation using the request's Accept header.
+// handlers is a map of MIME type to handler function; the best matching
+// handler is called. Returns an error if no match is found.
+//
+//	c.Res.Format(map[string]func(...){
+//		"application/json": func(...) { c.Res.JSON(data) },
+//		"text/html":        func(...) { c.Res.SendString("<p>data</p>") },
+//	})
+func (res *Res) Format(handlers map[string]func() error) error {
+	accept := res.c.r.Header.Get("Accept")
+	if accept == "" {
+		for ct, h := range handlers {
+			if ct == "default" {
+				continue
+			}
+
+			res.c.w.Header().Set(HeaderContentType, ct)
+			return h()
+		}
+	}
+
+	for ct, h := range handlers {
+		if ct == "default" {
+			continue
+		}
+		if strings.Contains(accept, ct) || strings.Contains(accept, "*/*") {
+			res.c.w.Header().Set(HeaderContentType, ct)
+			return h()
+		}
+	}
+
+	if h, ok := handlers["default"]; ok {
+		return h()
+	}
+
+	res.c.w.WriteHeader(406)
+	res.c.written = true
+
+	return nil
+}
+
+// Location sets the Location response header to the given URL.
+// Returns *Res for chaining.
 func (res *Res) Location(url string) *Res {
 	if url == "back" {
 		url = res.c.r.Header.Get(HeaderReferer)
@@ -343,6 +436,11 @@ func (res *Res) Location(url string) *Res {
 	return res
 }
 
+// Redirect sends an HTTP redirect to the given URL. The status code defaults
+// to 302 (Found) if not provided; any 3xx code is accepted.
+//
+//	c.Res.Redirect("/login")
+//	c.Res.Redirect("/new-path", http.StatusMovedPermanently)
 func (res *Res) Redirect(url string, code ...int) error {
 	status := http.StatusFound
 	if len(code) > 0 {
@@ -356,6 +454,10 @@ func (res *Res) Redirect(url string, code ...int) error {
 	return nil
 }
 
+// Vary appends the given field to the Vary response header, indicating that
+// the response may differ based on that request header.
+//
+//	c.Res.Vary("Accept-Encoding")
 func (res *Res) Vary(field string) *Res {
 	vary := res.c.w.Header().Get(HeaderVary)
 
@@ -374,12 +476,26 @@ func (res *Res) Vary(field string) *Res {
 	return res
 }
 
+// SendFileOptions configures the behaviour of [Res.SendFile] and [Res.Download].
 type SendFileOptions struct {
-	MaxAge  int
+	// MaxAge sets the Cache-Control max-age directive in seconds for the
+	// served file. A value of 0 disables caching headers.
+	MaxAge int
+
+	// Headers is a map of additional response headers to set when serving
+	// the file (e.g. custom Cache-Control directives, CORS headers).
 	Headers map[string]string
-	Root    string
+
+	// Root restricts file serving to the given directory. Any path that
+	// resolves outside Root is rejected to prevent directory traversal attacks.
+	// If empty, no restriction is applied.
+	Root string
 }
 
+// SendFile serves a file from the local filesystem at the given path.
+// It sets Content-Type based on the file extension, supports Range requests,
+// and accepts optional [SendFileOptions] (e.g. root directory restriction).
+// Path traversal outside the configured root is rejected.
 func (res *Res) SendFile(path string, opts ...SendFileOptions) error {
 	if path == "" {
 		return ErrPathRequired
@@ -446,6 +562,8 @@ func (res *Res) SendFile(path string, opts ...SendFileOptions) error {
 	return nil
 }
 
+// SendFileFS serves a file from the provided [http.FileSystem] at the given path.
+// Useful for serving embedded files (e.g. via go:embed).
 func (res *Res) SendFileFS(fsys http.FileSystem, path string) error {
 	f, err := fsys.Open(path)
 	if err != nil {
@@ -481,6 +599,9 @@ func (res *Res) SendFileFS(fsys http.FileSystem, path string) error {
 	return nil
 }
 
+// Download serves a file as a downloadable attachment. It behaves like
+// [Res.SendFile] but also sets Content-Disposition to "attachment".
+// An optional filename overrides the name shown in the browser's save dialog.
 func (res *Res) Download(path string, filename ...string) error {
 	name := filepath.Base(path)
 	if len(filename) > 0 && filename[0] != "" {
@@ -492,6 +613,8 @@ func (res *Res) Download(path string, filename ...string) error {
 	return res.SendFile(path)
 }
 
+// DownloadFS serves a file from the provided [http.FileSystem] as a
+// downloadable attachment. See [Res.Download] and [Res.SendFileFS].
 func (res *Res) DownloadFS(fsys http.FileSystem, path string, filename ...string) error {
 	name := filepath.Base(path)
 	if len(filename) > 0 && filename[0] != "" {

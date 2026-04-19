@@ -21,9 +21,20 @@ var handshakeHeader = []byte(
 var httpErrorHeader = []byte("HTTP/1.1 ")
 var httpErrorFooter = []byte("\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
 
+// Upgrader performs the WebSocket HTTP handshake and upgrades the connection.
 type Upgrader struct {
-	CheckOrigin  func(origin string) bool
+	// CheckOrigin validates the Origin header of the upgrade request.
+	// Return false to reject the handshake with 403 Forbidden.
+	// If nil, all origins are accepted.
+	CheckOrigin func(origin string) bool
+
+	// Subprotocols lists the server's supported WebSocket subprotocols.
+	// The best match with the client's Sec-WebSocket-Protocol header is
+	// selected and echoed in the 101 response.
 	Subprotocols []string
+
+	// WriteTimeout sets the deadline for writing the handshake response.
+	// A zero value means no timeout.
 	WriteTimeout time.Duration
 }
 
@@ -31,6 +42,9 @@ type Handshake struct {
 	protocol string
 }
 
+// Upgrade validates the HTTP upgrade request and performs the WebSocket
+// handshake. On success it returns a [Conn] backed by the hijacked connection.
+// On failure it writes an appropriate HTTP error response and returns an error.
 func (u *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request) (*Conn, error) {
 	hj, ok := w.(http.Hijacker)
 	if !ok {

@@ -5,9 +5,23 @@ import (
 	"net/url"
 )
 
+// Ctx is the request context passed to every [HandlerFunc]. It embeds [Req]
+// and [Res] directly, so request reading and response writing methods are
+// accessible without any extra field access.
+//
+//	app.GET("/hello", func(c *aero.Ctx) error {
+//		name := c.Req.Param("name")
+//		return c.Res.SendString("Hello, " + name)
+//	})
 type Ctx struct {
+	// Req provides access to all incoming request data: headers, params,
+	// query string, body, cookies, and more.
 	Req
+
+	// Res provides methods for building and sending the HTTP response:
+	// status codes, headers, JSON, files, redirects, and more.
 	Res
+
 	app         *App
 	route       *route
 	r           *http.Request
@@ -27,6 +41,16 @@ type Ctx struct {
 	isHijacked  bool
 }
 
+// Next executes the next handler or middleware in the chain for the current
+// route. It must be called inside a middleware to pass control forward.
+// Calling Next after the chain is exhausted is a no-op and returns nil.
+//
+//	func logger(c *aero.Ctx) error {
+//		start := time.Now()
+//		err := c.Next()
+//		log.Printf("%s %s — %v", c.Req.Method(), c.Req.Path(), time.Since(start))
+//		return err
+//	}
 func (c *Ctx) Next() error {
 	if c.route == nil || c.index >= c.route.total {
 		return nil

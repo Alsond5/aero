@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 )
 
+// ReadHeader reads and parses a WebSocket frame header from r into dst.
+// Returns an error if the stream is malformed or the connection is closed.
 func ReadHeader(r *bufio.Reader, dst *Header) error {
 	b0, err := r.ReadByte()
 	if err != nil {
@@ -68,21 +70,28 @@ func ReadHeader(r *bufio.Reader, dst *Header) error {
 	return nil
 }
 
-func ParseCloseFrameData(payload []byte) (code CloseStaatusCode, reason string) {
+// ParseCloseFrameData decodes the status code and reason string from a
+// close frame payload. Returns CloseNormalClosure with an empty reason
+// if the payload is empty.
+func ParseCloseFrameData(payload []byte) (code CloseStatusCode, reason string) {
 	if len(payload) < 2 {
 		return code, reason
 	}
-	code = CloseStaatusCode(binary.BigEndian.Uint16(payload))
+	code = CloseStatusCode(binary.BigEndian.Uint16(payload))
 	reason = string(payload[2:])
 
 	return code, reason
 }
 
-func ParseCloseFrameDataUnsafe(payload []byte) (code CloseStaatusCode, reason string) {
+// ParseCloseFrameDataUnsafe is identical to [ParseCloseFrameData] but avoids
+// a heap allocation by returning the reason as a string backed by the
+// original payload slice. The caller must not retain the payload after
+// the returned string is used.
+func ParseCloseFrameDataUnsafe(payload []byte) (code CloseStatusCode, reason string) {
 	if len(payload) < 2 {
 		return code, reason
 	}
-	code = CloseStaatusCode(binary.BigEndian.Uint16(payload))
+	code = CloseStatusCode(binary.BigEndian.Uint16(payload))
 	reason = unsafeByteToString(payload[2:])
 
 	return code, reason

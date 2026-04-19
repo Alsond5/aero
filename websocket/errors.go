@@ -28,18 +28,23 @@ var (
 	ErrUpgradeRequired        = errors.New("websocket: unsupported Sec-WebSocket-Version, only 13 is supported")
 )
 
+// CloseError is returned when the remote peer sends a close frame.
+// It carries the status code and optional reason string.
 type CloseError struct {
 	Code   uint16
 	Reason string
 }
 
-func NewCloseError(code CloseStaatusCode, reason string) *CloseError {
+// NewCloseError creates a [CloseError] with the given status code and reason.
+func NewCloseError(code CloseStatusCode, reason string) *CloseError {
 	return &CloseError{
 		Code:   code.Value(),
 		Reason: reason,
 	}
 }
 
+// Error implements the error interface, returning a human-readable
+// description of the close event.
 func (e *CloseError) Error() string {
 	if e.Reason == "" {
 		return fmt.Sprintf("websocket: close %d", e.Code)
@@ -48,25 +53,29 @@ func (e *CloseError) Error() string {
 	return fmt.Sprintf("websocket: close %d %s", e.Code, e.Reason)
 }
 
-type CloseStaatusCode uint16
+// CloseStatusCode represents a WebSocket close status code as defined in
+// RFC 6455 §7.4.
+type CloseStatusCode uint16
 
 const (
-	CloseNormalClosure      CloseStaatusCode = 1000
-	CloseGoingAway          CloseStaatusCode = 1001
-	CloseProtocolError      CloseStaatusCode = 1002
-	CloseUnsupportedData    CloseStaatusCode = 1003
-	CloseNoStatusReceived   CloseStaatusCode = 1005
-	CloseAbnormalClosure    CloseStaatusCode = 1006
-	CloseInvalidPayload     CloseStaatusCode = 1007
-	ClosePolicyViolation    CloseStaatusCode = 1008
-	CloseMessageTooBig      CloseStaatusCode = 1009
-	CloseMandatoryExtension CloseStaatusCode = 1010
-	CloseInternalServerErr  CloseStaatusCode = 1011
-	CloseServiceRestart     CloseStaatusCode = 1012
-	CloseTryAgainLater      CloseStaatusCode = 1013
-	CloseTLSHandshake       CloseStaatusCode = 1015
+	CloseNormalClosure      CloseStatusCode = 1000
+	CloseGoingAway          CloseStatusCode = 1001
+	CloseProtocolError      CloseStatusCode = 1002
+	CloseUnsupportedData    CloseStatusCode = 1003
+	CloseNoStatusReceived   CloseStatusCode = 1005
+	CloseAbnormalClosure    CloseStatusCode = 1006
+	CloseInvalidPayload     CloseStatusCode = 1007
+	ClosePolicyViolation    CloseStatusCode = 1008
+	CloseMessageTooBig      CloseStatusCode = 1009
+	CloseMandatoryExtension CloseStatusCode = 1010
+	CloseInternalServerErr  CloseStatusCode = 1011
+	CloseServiceRestart     CloseStatusCode = 1012
+	CloseTryAgainLater      CloseStatusCode = 1013
+	CloseTLSHandshake       CloseStatusCode = 1015
 )
 
-func (s CloseStaatusCode) Value() uint16 {
+// Value returns the numeric uint16 representation of the status code,
+// suitable for writing into a close frame payload.
+func (s CloseStatusCode) Value() uint16 {
 	return uint16(s)
 }
